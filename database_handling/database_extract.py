@@ -216,12 +216,16 @@ def open_trial_data(list_of_trials,n_timesteps_max,pad_timesteps=True):
 
     return trials_data
 
-def fetch_participant_info(prolific_exports_foldername,prolific_study_id,participant_prolific_id):
+def fetch_participant_info(prolific_exports_foldername,prolific_study_id,participant_prolific_id,ignore_if_did_not_find=True):
     export_name = "prolific_export_" + prolific_study_id + ".csv"
     filepath = os.path.join(prolific_exports_foldername,export_name)
     
     if not(os.path.isfile(filepath)):
-        raise FileNotFoundError("Could not find the prolific export requested. Are you sure it was deposited in the folder " + prolific_exports_foldername + " ?" )
+        if ignore_if_did_not_find : 
+            print("ALERT : Could not find the prolific export requested for task {}. Are you sure it was deposited in the folder {} ?".format(prolific_study_id,prolific_exports_foldername))
+            return [],[]
+        else :
+            raise FileNotFoundError("Could not find the prolific export requested. Are you sure it was deposited in the folder " + prolific_exports_foldername + " ?" )
     
     with open(filepath, 'r') as file:
         csvreader = csv.reader(file)
@@ -236,6 +240,10 @@ def fetch_participant_info(prolific_exports_foldername,prolific_study_id,partici
                     except:
                         continue
                 return labels,formatted_row
+    
+    if ignore_if_did_not_find : 
+        print("Could not find the prolific id for the following subject : " + participant_prolific_id + ". Are you sure the prolific export is up to date ?")
+        return [],[]
     
     # No entry found    
     raise ValueError("Could not find the prolific id for the following subject : " + participant_prolific_id + ". Are you sure the prolific export is up to date ?" )
@@ -315,16 +323,19 @@ def extract_subject_data(data,auto_translate= True):
     
     return dictionnary_instance,events,trials_data,fb_rtv
 
-def get_full_subject_entry(recordings_collection,subject_id):
+def get_full_subject_entry(recordings_collection,subject_id,task_id=None):    
     
-    matching_subjects = list(recordings_collection.find({"subjectId":subject_id}))
-    
+    if task_id is None:
+        matching_subjects = list(recordings_collection.find({"subjectId":subject_id}))
+    else :
+        matching_subjects = list(recordings_collection.find({"$and": [{"subjectId":subject_id}, {"taskCode":{"$regex": task_id}}]}))
     
     if len(matching_subjects)>1:
         for subj in matching_subjects:
             print(extract_subject_data(subj))
         print(matching_subjects)
         raise ValueError("More than one matching entry for subject " + str(subject_id))
+        
     
     dictionnary_instance,events,trials_data,fb_rtv = extract_subject_data(matching_subjects[0])
     task_participated_in = dictionnary_instance["task_code"]
@@ -344,9 +355,11 @@ def get_full_subject_entry(recordings_collection,subject_id):
 
 def get_all_subject_data_from_internal_task_id(internal_task_id,prolific_task_id=None,              
                     autosave=True,override_save=False,autoload=True):
-    dont_check_prolific_task_id = (prolific_task_id==None)
+    check_prolific_task_id = not(prolific_task_id is None)
+    
     filename = str(internal_task_id)
-    if not(dont_check_prolific_task_id) :
+    
+    if check_prolific_task_id :
         filename = filename + '_' + prolific_task_id
         
     data_savefolder = os.path.join("ressources","extracted")
@@ -380,12 +393,12 @@ def get_all_subject_data_from_internal_task_id(internal_task_id,prolific_task_id
         [recorded_task, recorded_prolific_task_id] = (entry["taskCode"].split("+"))
        
         if recorded_task == internal_task_id:
-            if dont_check_prolific_task_id or (recorded_prolific_task_id==prolific_task_id):
+            if not(check_prolific_task_id) or (recorded_prolific_task_id==prolific_task_id):
                 subject_ids_concerned.append(entry["subjectId"])
     
     return_data = []
     for subjid in subject_ids_concerned:
-        return_data.append(get_full_subject_entry(collection_complete,subjid))
+        return_data.append(get_full_subject_entry(collection_complete,subjid,internal_task_id))
     
     
     

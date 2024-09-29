@@ -13,10 +13,6 @@ from jax import vmap
 
 from functools import partial
 
-# 2/ The Active Inference package 
-import actynf
-from actynf.jaxtynf.jax_toolbox import _normalize,_jaxlog
-
 # We define the environment as a state machine that outputs a feedback 
 # every time an action is given to it : 
 from actynf.jaxtynf.layer_process import initial_state_and_obs,process_update
@@ -30,8 +26,13 @@ from actynf.jaxtynf.shape_tools import vectorize_weights
 
 # run_loop is the forward mode : given an ageent and an environment, it will simulate 
 # the behaviour of an agent and report its history :)
-def run_loop(environment,agent_functions,seed,Ntrials):
+def run_loop(environment,agent_functions,seed,Ntrials,verbose=True):
     rng_key = jr.PRNGKey(seed)
+    
+    
+    env_key,agent_key = jr.split(rng_key)
+    environment.rng_key = env_key
+    
     init_params,init_state,agent_step,agent_learn,_,_ = agent_functions
     
     params = init_params()
@@ -42,26 +43,28 @@ def run_loop(environment,agent_functions,seed,Ntrials):
         "actions" : [],
         "timestamps" : [],
         "states" : [],
-        "params" : []
+        "params" : [],
+        "env_states" : [],
     }
     
     for trial in range(Ntrials):
-        print("Trial {}".format(trial))
+        if verbose:
+            print("Trial {}".format(trial))
         
-        o,r,end_trial,t = environment.reinit_trial()
+        o,r,end_trial,t,env_state = environment.reinit_trial()
         
         state = init_state(params)
 
-        rewards,observations,t_list,states,actions = [r],[o],[t],[],[]
+        rewards,observations,t_list,states,actions,true_states = [r],[o],[t],[],[],[env_state]
 
         
         
         while not end_trial:
             
-            choice_rng_key, rng_key = jr.split(rng_key)
+            choice_rng_key, agent_key = jr.split(agent_key)
             state,(u_d,u_idx,u_vec) = agent_step((o,r,end_trial,t),state,params,choice_rng_key)
         
-            o,r,end_trial,t = environment.step(u_vec)
+            o,r,end_trial,t,env_state = environment.step(u_vec)
             
             # The history of experiences for this trial :
             states.append(state)
@@ -71,10 +74,13 @@ def run_loop(environment,agent_functions,seed,Ntrials):
             rewards.append(r)
             observations.append(o)
             t_list.append(t)
+            
+            # And the true state of the environment :
+            true_states.append(env_state)
         
-        # Last state update :
-        choice_rng_key, rng_key = jr.split(rng_key)
-        state,_ = agent_step((o,r,end_trial,t),state,params,choice_rng_key)
+        # Last agent state update :
+        choice_rng_key, agent_key = jr.split(agent_key)
+        state,_ = agent_step((o,r,end_trial,t),state,params,agent_key)
         states.append(state)
         
         
@@ -107,6 +113,7 @@ def run_loop(environment,agent_functions,seed,Ntrials):
         full_history["states"].append(ref_states)
         full_history["params"].append(params)
         full_history["actions"].append(actions)
+        full_history["env_states"].append(true_states)
       
     return params,full_history
       
@@ -151,7 +158,7 @@ class TrainingEnvironment :
         self.current_state = s_vect
         self.previous_observation = o_vect
         
-        return o_vect,jnp.array(0.0),False,self.t
+        return o_vect,jnp.array(0.0),False,self.t,s_idx
     
     def step(self,action_chosen):
         self.t = self.t + 1   # New timestep !
@@ -173,7 +180,7 @@ class TrainingEnvironment :
         self.current_state = s_vect
         self.previous_observation = o_vect
          
-        return o_vect,reward,(self.t == self.Ntimesteps-1),self.t
+        return o_vect,reward,(self.t == self.Ntimesteps-1),self.t,s_idx
 
 
 

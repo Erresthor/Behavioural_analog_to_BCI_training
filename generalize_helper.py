@@ -189,11 +189,3 @@ def get_extrapolated_deltab(hist_u,hist_qs,action_filter,
         db_all_timesteps = db_all_timesteps + extrapolated_other_states
     
     return db_all_timesteps
-    
-    
-#     
-#     db_gen_across_states = generalize_across_states(db_all_timesteps,generalize_state_function)
-    
-    
-    
-#     return pb + lr_b*gen_db

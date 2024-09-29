@@ -95,7 +95,7 @@ def show_summary(data,incomplete=False,show_figures=True):
             print("Could not plot actions figure")
     return log_string
 
-def check_subject_recordings(subject_id,check_incomplete = False):
+def check_subject_recordings(subject_id,check_incomplete = False,all_incompletes = False):
     
     log_str = "Log for subject " + str(subject_id) + "\n\n"
     
@@ -120,8 +120,11 @@ def check_subject_recordings(subject_id,check_incomplete = False):
         log_str +=("Found {n_entries} INCOMPLETE entries matching for subject [{subj}]\n".format(n_entries=N_matching_subjs_inc,subj=subject_id))
         if N_matching_subjs_inc>0:
             # Show the first incomplete data found
-            log_str+=show_summary(matching_subjects_inc[-1],incomplete=True)
-        
+            if all_incompletes:
+                for subj_entry in matching_subjects_inc:
+                    log_str+=show_summary(subj_entry,incomplete=True)
+            else :
+                log_str+=show_summary(matching_subjects_inc[-1],incomplete=True)
         if (N_matching_subjs==0):
             log_str +=("\n\nTrial not found for subject " + str(subject_id))
             log_str +=("\n---> Please review this case manually.")
@@ -133,11 +136,18 @@ def check_subject_recordings(subject_id,check_incomplete = False):
         for data in matching_subjects :
             log_str +=("  - " + str(data["firstTime"]) + " --- " + str(data["object_save_date"])+ "\n")
         log_str += ("\n\nMore than one entry with the same subject name (for subject " + str(subject_id) + ")")
+        
+        log_str += "\n"*3 + "LAST ENTRY : \n"
+        # Get the full summary for the last subject : 
+        log_str+=show_summary(matching_subjects[-1],incomplete=False)
+        log_str += "\n"*3
+        
+        
         log_str +=("\n---> Please review this case manually.")
         return log_str
     
     # Get the full summary for the subject : 
-    log_str+=show_summary(matching_subjects[0],incomplete=False)
+    log_str+=show_summary(matching_subjects[-1],incomplete=False)
     
     return log_str
   
@@ -149,7 +159,6 @@ if __name__=="__main__":
     # from database_handling.access_remote_collections import load_client_address
     # CLIENT = pymongo.MongoClient(load_client_address()) 
             
-    internal_task_id = '002'
     # subj = "5c9cb670b472d0001295f377"  # This one started the task, failed 5 attention checks instantly, and then started again...
     
     # REVIEW THESE TOMORROW :
@@ -159,8 +168,8 @@ if __name__=="__main__":
     # subj ="66019988a3d63339927cc80f" 
     # subj = "5f0559d1bc410b85707c58a3"
 
-    subj = "66afca43953aa024bde5ae23"
+    subj = "6613fa9b08e1e2496afb6518"
             
-    print(check_subject_recordings(subj,True))
+    print(check_subject_recordings(subj,True,True))
     input()
     exit()

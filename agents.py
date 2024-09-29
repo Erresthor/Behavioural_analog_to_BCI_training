@@ -24,7 +24,7 @@ from actynf.jaxtynf.shape_tools import to_log_space,get_vectorized_novelty
 from actynf.jaxtynf.shape_tools import vectorize_weights
 
 # Weights for the active inference model : 
-from hmm_weights import basic_latent_model
+from simulate.hmm_weights import basic_latent_model
 
 
 def softplus_inverse(y):
@@ -34,12 +34,13 @@ def softplus_inverse(y):
 # This could (should) have been a set of children class but I don't have time to figure out how 
 # jax autodifferentiation may interact with class instances :/
 
-# All agents implement 5 classes :
+# All agents implement 6 classes :
 #  - initial_params (no args) : initialize the parameters of the model at the beginning of the training
 #  - initial_state (args : params) : initialize the inner state of the model at the beginning of the trial
 #  - actor_step (args : observation,model_state,params,jax.random.PRNGKey) : used in forward mode : generates a set of action variables and updates the agent inner state in response to stimuli
 #  - update_params (args : trial_history, params): change the parameters at the end of a trial, given a history of observations & inner states, u^date the trial scale parameters of the models
 #  - predict (used in log likelihood computations) : the same as actor_step, without the action selection part
+#  - encode_params (used in inversions) : transform a tensor of real-valued weights into a set of model parameters.
 
 def random_agent(hyperparameters,constants):
     # a,b,c = hyperparameters

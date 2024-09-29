@@ -7,13 +7,9 @@ from functools import partial
 from actynf.jaxtynf.jax_toolbox import tensorify
 
 from actynf.base.function_toolbox import normalize
-from models_utils import sub2ind,ind2sub,distance,discretized_distribution_from_value
-
-from actynf.jaxtynf.jax_toolbox import _normalize,_jaxlog
+from .models_utils import sub2ind,ind2sub,distance,discretized_distribution_from_value,discretize_normal_pdf
 
 from jax.lax import stop_gradient
-
-from utils import discretize_normal_pdf
 
 
 def to_jax(x):
@@ -386,8 +382,6 @@ def grid_latent_model(parameters,action_model="angle"):
 
 
 if __name__=="__main__":
-    
-    
     # We get a model weights by defining a "parameters" object :
     aif_1d_constants = {
         # General environment : 
