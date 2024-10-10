@@ -4,6 +4,8 @@ import numpy as np
 import csv
 
 from .access_remote_collections import get_complete_collection
+from .utils import get_values_in_interval
+
 
 from langdetect import detect
 from deep_translator import GoogleTranslator
@@ -15,6 +17,106 @@ def get_feedback_recording(fb_data):
     for fbv in fb_data:
         fb_rtv.append([fbv["t"],fbv["value"],fbv["real_value"]])
     return np.array(fb_rtv)
+
+def process_real_time_feedback(feedback_rt_array,
+                            raw_trial_starts,raw_trial_ends,
+                            raw_tmstp_starts,raw_tmstp_ends,
+                            t_action_1,t_action_2,
+                            misses_tracker,
+                            observation_ends_at_action = 2,
+                            INITIAL_TRIAL_START_OFFSET=2000):
+    
+    N_trials_visible = raw_trial_starts.shape[0]-1 # last trial was blind !
+    Ntimesteps = raw_tmstp_starts.shape[-1] 
+    
+    
+    # Only keep the feedbacks recorded after the start of the trial : (and the initial timesteps within 2000 ms !)
+    task_start_t = raw_trial_starts[0] - INITIAL_TRIAL_START_OFFSET  # We change this value to use it when accounting for observed feedback values
+    
+    
+    all_trial_starts = raw_trial_starts
+    all_trial_starts[0] = task_start_t
+    
+    all_trial_ends = raw_trial_ends
+
+    # Remove the feedback values seen during the instructions :
+    task_fbs = get_values_in_interval(feedback_rt_array,task_start_t)
+        
+
+    feedback_series = []
+    
+    for trial_k in range(N_trials_visible):
+        trial_start_t,trial_end_t = all_trial_starts[trial_k],all_trial_ends[trial_k]
+
+        # Remove all data before this trial and all data after
+        trial_feedbacks = get_values_in_interval(task_fbs,trial_start_t,trial_end_t)   
+        
+        # Let's try to keep only the arrays we're interested in (we could probably do this with a dataframe...)
+        # The initial observation is everything between the start of the trial and the end of the first action
+        observation_start_t,observation_end_t = trial_start_t,t_action_2[trial_k,0] # raw_tmstp_ends[trial_k,0]
+        all_observation_arrays = [get_values_in_interval(trial_feedbacks,observation_start_t,observation_end_t)]
+            
+        
+        
+        
+        for timestep_k in range(1,Ntimesteps):
+            if (observation_ends_at_action == 2):
+                # Observations can either be cut off after the second point :
+                observation_start_t,observation_end_t = t_action_2[trial_k,timestep_k-1],t_action_2[trial_k,timestep_k]
+            elif (observation_ends_at_action == 1) :
+                # Or the first, depending on our model : 
+                # (we consider the subject did not take into account gauge movements during the action)
+                observation_start_t,observation_end_t = t_action_2[trial_k,timestep_k-1],t_action_1[trial_k,timestep_k]
+            else : 
+                raise NotImplementedError("Observation ends key error : only 1 or 2 are accepted.")
+            
+            if misses_tracker[trial_k,timestep_k]>0.51:
+                # If we missed the action, the observation_end_t can be considered as the timestep end :
+                observation_end_t =  raw_tmstp_ends[trial_k,timestep_k]
+
+            all_observation_arrays.append(get_values_in_interval(trial_feedbacks,observation_start_t,observation_end_t))    
+        
+        
+        # The very last observation is between the last action and the end of the trial !
+        last_obs_start_t = t_action_2[trial_k,-1]
+        last_obs_end_t = trial_end_t
+        all_observation_arrays.append(get_values_in_interval(trial_feedbacks,last_obs_start_t,last_obs_end_t))   
+        
+        
+        feedback_series.append(all_observation_arrays)
+    
+    # feedback_series is a [[np.ndarray]] object
+    return feedback_series
+    
+    
+    N_FB_BINS = 7
+
+    i = 3
+    subject_i_fbs = RT_FBS[i]
+    subject_i_trial_data = TRIAL_DATA[i]
+
+    subject_i_noise_intensity = TRIAL_DATA[i]["parameters"]["noise_int"][0]
+
+    subject_i_timings = subject_i_trial_data["timing"]
+    subject_i_start_trials = subject_i_timings["trial"]["start"]
+    subject_i_end_trials = subject_i_timings["trial"]["end"]
+    subject_i_start_tsteps = subject_i_timings["timestep"]["start"]
+    subject_i_end_tsteps = subject_i_timings["timestep"]["end"]
+    subject_i_misses_tracker = subject_i_timings["missed_actions"]
+
+    subject_i_action_1_tstamps = subject_i_timings["action"]["start"]
+    subject_i_action_2_tstamps = subject_i_timings["action"]["end"]
+
+    feedback_series=  get_all_feedback_series(subject_i_fbs,
+                                            subject_i_start_trials,subject_i_end_trials,
+                                            subject_i_start_tsteps,subject_i_end_tsteps,
+                                            subject_i_action_1_tstamps,subject_i_action_2_tstamps,
+                                            subject_i_misses_tracker,
+                                            observation_ends_at_action=2)
+
+
+
+
 
 def open_timestep_data(list_of_tmstp,max_n_timesteps,
                        last_tick_obs,last_tick_pos,
@@ -90,7 +192,7 @@ def open_timestep_data(list_of_tmstp,max_n_timesteps,
 def open_trial_parameters(list_of_trials):
     
     parameters = [trial_data["trialParameters"] for trial_data in list_of_trials]
-    
+    # print(parameters)
     # should be done for each trialParameters key : 
     # - start_pos (2D)
     # - end_pos   (2D) 
@@ -100,9 +202,12 @@ def open_trial_parameters(list_of_trials):
     # - smooth_edges (1D boolean)
     
     # For now, let's extract these ones : 
-    gauge_int_all_trials = [trial_params["gauge_int"] for trial_params in parameters ]
+    gauge_int_all_trials = [trial_params["gauge_int"] for trial_params in parameters]
+    goal_position_all_trials = [trial_params["end_pos"] for trial_params in parameters]
+    
     return {
-        "noise_int":gauge_int_all_trials
+        "noise_int":gauge_int_all_trials,
+        "goal_pos":goal_position_all_trials
     }
     
 def open_trial_data(list_of_trials,n_timesteps_max,pad_timesteps=True):
@@ -321,9 +426,14 @@ def extract_subject_data(data,auto_translate= True):
     fb_rtv = get_feedback_recording(data["feedbackRTValues"])
         # This will have to be integrated with the remainder of the data
     
+
+    
+    
+    
     return dictionnary_instance,events,trials_data,fb_rtv
 
-def get_full_subject_entry(recordings_collection,subject_id,task_id=None):    
+def get_full_subject_entry(recordings_collection,subject_id,task_id=None,
+                           process_feedback_data_stream=False):    
     
     if task_id is None:
         matching_subjects = list(recordings_collection.find({"subjectId":subject_id}))
@@ -351,9 +461,36 @@ def get_full_subject_entry(recordings_collection,subject_id,task_id=None):
     full_dict = dict(dictionnary_instance)
     full_dict.update(subject_dict)
     
+    
+    # 4. If demanded, cut the feedback datastream into trials and timesteps and store them with the rt_fb : 
+    if process_feedback_data_stream:
+        subject_i_timings = trials_data["timing"]
+        subject_i_start_trials = subject_i_timings["trial"]["start"]
+        subject_i_end_trials = subject_i_timings["trial"]["end"]
+        subject_i_start_tsteps = subject_i_timings["timestep"]["start"]
+        subject_i_end_tsteps = subject_i_timings["timestep"]["end"]
+        subject_i_misses_tracker = subject_i_timings["missed_actions"]
+
+        subject_i_action_1_tstamps = subject_i_timings["action"]["start"]
+        subject_i_action_2_tstamps = subject_i_timings["action"]["end"]
+        
+        
+        
+        cut_fb_stream = process_real_time_feedback(fb_rtv,
+                                subject_i_start_trials,subject_i_end_trials,
+                                subject_i_start_tsteps,subject_i_end_tsteps,
+                                subject_i_action_1_tstamps,subject_i_action_2_tstamps,
+                                subject_i_misses_tracker,
+                                observation_ends_at_action=2)
+        
+        
+        
+        fb_rtv = (fb_rtv,cut_fb_stream)
+    
     return full_dict,events,trials_data,fb_rtv
 
-def get_all_subject_data_from_internal_task_id(internal_task_id,prolific_task_id=None,              
+def get_all_subject_data_from_internal_task_id(internal_task_id,prolific_task_id=None,
+                    process_feedback_data_stream = False,           
                     autosave=True,override_save=False,autoload=True):
     check_prolific_task_id = not(prolific_task_id is None)
     
@@ -398,7 +535,8 @@ def get_all_subject_data_from_internal_task_id(internal_task_id,prolific_task_id
     
     return_data = []
     for subjid in subject_ids_concerned:
-        return_data.append(get_full_subject_entry(collection_complete,subjid,internal_task_id))
+        return_data.append(get_full_subject_entry(collection_complete,subjid,internal_task_id,
+                                                  process_feedback_data_stream))
     
     
     

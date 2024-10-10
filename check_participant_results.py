@@ -168,7 +168,8 @@ if __name__=="__main__":
     # subj ="66019988a3d63339927cc80f" 
     # subj = "5f0559d1bc410b85707c58a3"
 
-    subj = "6613fa9b08e1e2496afb6518"
+    subj = "665e8784960919e34257696d"
+
             
     print(check_subject_recordings(subj,True,True))
     input()

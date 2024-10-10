@@ -184,9 +184,9 @@ class TrainingEnvironment :
 
 
 
-def generate_synthetic_data(environment_object,agent_functions,n_trials=10,seed=0):
+def generate_synthetic_data(environment_object,agent_functions,n_trials=10,seed=0,verbose=True):
     # Synthetic data (here, generated randomly) :
-    params_final,training_hist = run_loop(environment_object,agent_functions,seed,n_trials)
+    params_final,training_hist = run_loop(environment_object,agent_functions,seed,n_trials,verbose)
 
 
     # Parameter update (once every trial)

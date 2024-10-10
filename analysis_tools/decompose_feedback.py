@@ -93,6 +93,8 @@ def get_all_feedback_series(feedback_rt_array,
     
     # feedback_series is a [[np.ndarray]] object
     return feedback_series
+
+
             
 def get_feedback_differences(feedback_series,true_feedback_values):
     # true_feedback_values = (subject_i_trial_data["scoring"]["feedback"][trial_k])
@@ -186,6 +188,7 @@ def decompose_real_time_feedback(_series,Nbins = 5,
         colsum = points_histograms.sum(axis=-1)
         points_histograms = points_histograms / colsum[..., np.newaxis]
     return seen_fb,points_histograms,scalar_means
+
 def decompose_all_observations(feedbacks_series_all_subj,trial_datas_all_subj,N_FB_BINS=5,observation_ends_at_action=2):
     assert len(feedbacks_series_all_subj)==len(trial_datas_all_subj), "Input list length mismatch :("
     

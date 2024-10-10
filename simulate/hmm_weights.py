@@ -75,10 +75,13 @@ def behavioural_process(grid_size,start_idx,end_idx,n_feedback_ticks,feedback_st
             to_x = from_x - angle_maps[action][0] # Inversion : going up is lowering your line value
             to_y = from_y + angle_maps[action][1]  
             
-            if ((to_x<0) or (to_x>=grid_size[0]) or (to_y<0) or (to_y>=grid_size[1])) :
-                to_state = from_state
-            else :
-                to_state = sub2ind(grid_size,(to_x,to_y))
+            if ((to_x<0) or (to_x>=grid_size[0])) : 
+                to_x = from_x
+            
+            if ((to_y<0) or (to_y>=grid_size[1])) :
+                to_y = from_y
+
+            to_state = sub2ind(grid_size,(to_x,to_y))
             
             B_angle[to_state,from_state,action]= 1.0
 

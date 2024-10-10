@@ -120,7 +120,7 @@ def fit(params, obs, loss_func, optimizer, num_steps = 100,
         if param_history:
             list_params.append(params)
         
-        if verbose and (i % 25 == 0):
+        if verbose and (i % 10 == 0):
             print(f'step {i}, loss: {loss_value}')
     
     if param_history:
@@ -187,7 +187,7 @@ def fit_map_agent(data,static_agent,
             N_hyperparams,priors,
             rngkey,
             true_hyperparams=None,n_iter=10,num_steps=100,
-            initial_window = [-10,10]):
+            initial_window = [-10,10],verbose=False):
     """This REALLY should have been done with a class ..."""
     
     if (priors is not None):
@@ -231,7 +231,7 @@ def fit_map_agent(data,static_agent,
     # Grab a few initial starting positions
     candidates = jr.uniform(rngkey,(n_iter,N_hyperparams),minval  = initial_window[0], maxval = initial_window[1])
 
-    fit_this = partial(fit,obs=data,loss_func = generic_loss,optimizer=optimizer,num_steps = num_steps,param_history=True)
+    fit_this = partial(fit,obs=data,loss_func = generic_loss,optimizer=optimizer,num_steps = num_steps,param_history=True,verbose=verbose)
 
     all_fin_params,all_losses,all_param_histories = vmap(fit_this)(candidates)
 
