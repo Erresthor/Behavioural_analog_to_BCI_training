@@ -136,8 +136,6 @@ def cartesian(arrays, out=None):
 
 
 # Plotting helpers
-
-
 def running_mean(x, N):
     return np.convolve(x, np.ones(N)/N, mode='same')
 
@@ -162,25 +160,144 @@ def generate_random_array(N):
     return np.random.random((N,))
 
 
+# Generalize findings across states : 
+def cross_state_gen():
+    return
+
+
+def weighted_padded_roll(matrix,generalize_fadeout,roll_axes=[-1,-2]):
+    assert matrix.ndim == 2,"Weighted Padded Roll only implemented for 2D arrays"
+    K = matrix.shape[0]
+    roll_limit = K
+        
+    padded_matrix = jnp.pad(matrix,((K,K),(K,K)),mode="constant",constant_values=0)
+     
+    rolling_func = lambda k : jnp.roll(padded_matrix,k,roll_axes)*generalize_fadeout(jnp.abs(k))
+    
+    all_rolled = vmap(rolling_func)(jnp.arange(-roll_limit,roll_limit+1))
+    
+    # Remove padding : 
+    all_rolled = all_rolled[...,K:-K,K:-K]
+    
+    new_db = all_rolled.sum(axis=-3)
+    
+    return new_db
+
+
 
 if __name__=="__main__":
-    std = 0.000005
-    Ns = 33
     
-    all_scalar_fb_values = np.linspace(0,1,Ns)   # Assume that the bigger the index of the state, the better the feedback
+    from actynf.jaxtynf.jax_toolbox import _normalize
     
-    discretize_distance_normal_function = partial(discretize_normal_pdf,std=std,num_bins = 1000,lower_bound= -1e-5 ,upper_bound = 1.0 + 1e-5)
-    stickiness,edges = vmap(discretize_distance_normal_function,out_axes=-1)(all_scalar_fb_values)
+    Ns = 5
+    Nu = 9
     
-    print(all_scalar_fb_values)
-    print(np.round(np.array(edges),2))
-    
-    
-    
-    print(stickiness)
+    B,_ = _normalize(np.ones((Ns,Ns,Nu)))  # Transition table (tracking controlability)
+    Q = np.zeros((Nu,Ns))                  # Reward table (tracking reward for each state)
+
+    q_alpha = 0.4
+    transition_alpha = 0.5
     
     
-    import matplotlib.pyplot as plt
+    last_reward = 0.3
     
-    plt.imshow(stickiness,vmin=0,vmax=1)
+    previous_posterior = np.array([0.1,0.8,0.1,0.0,0.0])
+    new_posterior = np.array([0.0,0.1,0.8,0.1,0.0])
+    
+    action_selected = np.zeros((Nu,))
+    action_id = 2
+    action_selected[action_id] = 1.0
+    
+    
+    previous_action_state = jnp.einsum("u,j->uj",action_selected,previous_posterior)
+    observed_transition = jnp.einsum("i,j,u->iju",new_posterior,previous_posterior,action_selected) # This density should be pushed towards 1 !
+    unobserved_transition = jnp.einsum("i,j,u->iju",1.0 - new_posterior,previous_posterior,action_selected) # This density should be pushed towards 0 !
+    new_B = B - transition_alpha*unobserved_transition*B + transition_alpha*observed_transition*(1.0-B)
+    
+    
+    
+    gamma = 20.0
+    
+    # Qtable :
+    previous_posterior = np.array([0.1,0.8,0.1,0.0,0.0])
+    raw_action_state = jnp.einsum("u,j->uj",action_selected,previous_posterior)
+    generalized_action_state = weighted_padded_roll(raw_action_state,lambda x : jnp.exp(-gamma*x),[-1])
+    raw_Q = Q + q_alpha*(last_reward - Q)*raw_action_state
+    gen_Q = Q + q_alpha*(last_reward - Q)*generalized_action_state
+    
+    # Transition table : 
+    fadeout_func = lambda x : jnp.exp(-gamma*x)
+    generalize_function = lambda x : weighted_padded_roll(x,fadeout_func,[-1,-2])
+    
+    
+    raw_B = B
+    gen_B = B
+    
+    for t in range(10):
+        observed_transition = jnp.einsum("i,j->ij",new_posterior,previous_posterior)
+        unobserved_transition = jnp.einsum("i,j->ij",1.0-new_posterior,previous_posterior)
+        
+        # Raw learnt transitions : 
+        raw_db = jnp.einsum("ij,u->iju",observed_transition,action_selected)
+        raw_dbo = jnp.einsum("ij,u->iju",unobserved_transition,action_selected)
+        raw_B = raw_B - transition_alpha*raw_dbo*raw_B + transition_alpha*raw_db*(1.0-raw_B)
+        
+        gen_db = jnp.einsum("ij,u->iju",generalize_function(observed_transition),action_selected)
+        gen_dbo = jnp.einsum("ij,u->iju",generalize_function(unobserved_transition),action_selected)
+        gen_B = gen_B - transition_alpha*gen_dbo*gen_B + transition_alpha*gen_db*(1.0-gen_B)
+        
+    
+        print(np.sum(raw_B[...,action_id],axis=0))
+        print(np.sum(gen_B[...,action_id],axis=0))
+        
+        import matplotlib.pyplot as plt
+        fig,axes = plt.subplots(2,3)
+        axes[0,0].set_title("Raw obs. transitions")
+        axes[0,0].imshow(raw_db[...,action_id],vmin=0,vmax=1.0)
+        axes[0,1].set_title("Raw unobs. transitions")
+        axes[0,1].imshow(raw_dbo[...,action_id],vmin=0,vmax=1.0)
+        axes[0,2].set_title("Updated transition mapping")
+        axes[0,2].imshow(raw_B[...,action_id],vmin=0,vmax=1.0)
+        axes[1,0].set_title("Gen. obs. transitions")
+        axes[1,0].imshow(gen_db[...,action_id],vmin=0,vmax=1.0)
+        axes[1,1].set_title("Raw unobs. transitions")
+        axes[1,1].imshow(gen_B[...,action_id],vmin=0,vmax=1.0)
+        axes[1,2].set_title("Updated gen. transition mapping")
+        axes[1,2].imshow(gen_B[...,action_id],vmin=0,vmax=1.0)
     plt.show()
+    
+    
+    
+    
+    # import matplotlib.pyplot as plt
+    # fig,axes = plt.subplots(2,2,figsize=(10,5))
+    # axes[0,0].set_title("Raw state")
+    # axes[0,0].imshow(raw_action_state,vmin=0,vmax=1.0)
+    # axes[0,1].set_title("Generalized state")
+    # axes[0,1].imshow(generalized_action_state,vmin=0,vmax=1.0)
+    # axes[1,0].set_title("Raw updated Qtable")
+    # axes[1,0].imshow(raw_Q)
+    # axes[1,1].set_title("Generalized updated Qtable")
+    # axes[1,1].imshow(gen_Q)
+    # plt.show()
+        
+    # std = 0.000005
+    # Ns = 33
+    
+    # all_scalar_fb_values = np.linspace(0,1,Ns)   # Assume that the bigger the index of the state, the better the feedback
+    
+    # discretize_distance_normal_function = partial(discretize_normal_pdf,std=std,num_bins = 1000,lower_bound= -1e-5 ,upper_bound = 1.0 + 1e-5)
+    # stickiness,edges = vmap(discretize_distance_normal_function,out_axes=-1)(all_scalar_fb_values)
+    
+    # print(all_scalar_fb_values)
+    # print(np.round(np.array(edges),2))
+    
+    
+    
+    # print(stickiness)
+    
+    
+    # import matplotlib.pyplot as plt
+    
+    # plt.imshow(stickiness,vmin=0,vmax=1)
+    # plt.show()

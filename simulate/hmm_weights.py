@@ -161,7 +161,7 @@ def naive_model(parameters,action_model="angle"):
 
     return a,b,c,d,e,u
 
-def basic_latent_model(parameters,action_model="angle"):
+def basic_latent_model(parameters):
     '''
     A function defining a generic neurofeedback model depending on a few criteria:
     cognitive_layout : a list of the cognitive dimensions we wish to model
@@ -192,6 +192,74 @@ def basic_latent_model(parameters,action_model="angle"):
     # This is first defined using numpy, but we will derive a jax implementation if it becomes needed later
     # (i.e. we parametrize part of this mapping)
     all_scalar_fb_values = np.linspace(0,1,Ns)   # Assume that the bigger the index of the state, the better the feedback
+    discretize_distance_normal_function = partial(discretize_normal_pdf,std=feedback_std,num_bins = n_feedback_ticks,lower_bound= -1e-5 ,upper_bound = 1.0 + 1e-5)
+    stickiness,edges = vmap(discretize_distance_normal_function,out_axes=-1)(all_scalar_fb_values)
+       
+    # Perceptive prior is built as follows :
+    # - a "base term" that represents subject uncertainty regarding the meaning of the feedback
+    # - a "stickiness term" that represents subject prior belief that the feedback gives information about 
+    #        its latent state
+    base = jnp.ones((n_feedback_ticks,Ns))        
+    
+    a0 = emission_concentration*base + emission_stickiness*stickiness
+    a = [a0]
+    
+    # Action modalities : there are various ways of modeling those actions. 
+    # Here, we consider that the subject may entertain 3 different models : 
+    # 1. A model where the angle drives the feedback  (9 actions)
+    # 2. A model where the position of the point drives the feedback (9 actions)
+    # 3. A model where the distance between points drives the feedback (3 actions)
+    n_possible_actions = parameters["N_actions"]
+    
+    # An initially naive model !
+    transition_stickiness = parameters["transition_stickiness"]
+    transition_concentration = parameters["transition_concentration"]
+    b0 = transition_concentration*jnp.ones((Ns,Ns,n_possible_actions)) + transition_stickiness*jnp.expand_dims(jnp.eye(Ns),-1)
+    b = [b0]
+    
+    # Assume a linear preference matrix c = ln p(o)
+    
+    rs = parameters["reward_seeking"]
+    c = [jnp.linspace(0,rs,n_feedback_ticks)]
+
+    u = to_jax(np.expand_dims(np.array(range(b[0].shape[-1])),-1))
+    e = jnp.ones((b[0].shape[-1],))
+
+    return a,b,c,d,e,u
+
+
+
+def simple_1D_model(parameters):
+    '''
+    A function defining a generic neurofeedback model depending on a few criteria:
+    cognitive_layout : a list of the cognitive dimensions we wish to model
+    feedback_Nticks : how we wish to discretize the feedback
+    '''
+    
+    # MAIN ASSUMPTION : HIDDEN STATES ARE *NOT* DIRECTLY OBSERVABLE USING THE FEEDBACK
+    # BUT THE FEEDBACK GIVES AN ESTIMATE OF THE CURRENT LATENT STATE VALUE
+    n_feedback_ticks = parameters["N_feedback_ticks"]
+    Ns = parameters["Ns_latent"]
+    
+    
+    
+    # Initial state belief :
+    initial_state_concentration = 1.0
+    d0 = initial_state_concentration*jnp.ones((Ns,))
+        # Uninformed prior on hidden state position before the task starts
+    d = [d0]
+
+
+
+    # Emissions :
+    feedback_std = parameters["feedback_expected_std"]
+    emission_stickiness = 1.0
+    emission_concentration = 0.0
+    
+    # The feedback is a one-dimensionnal information related to the latent state
+    # This is first defined using numpy, but we will derive a jax implementation if it becomes needed later
+    # (i.e. we parametrize part of this mapping)
+    all_scalar_fb_values = np.linspace(0,1,Ns)   # Assume that the bigger the index of the state, the better the feedback
     
     discretize_distance_normal_function = partial(discretize_normal_pdf,std=feedback_std,num_bins = n_feedback_ticks,lower_bound= -1e-5 ,upper_bound = 1.0 + 1e-5)
     stickiness,edges = vmap(discretize_distance_normal_function,out_axes=-1)(all_scalar_fb_values)
@@ -210,16 +278,11 @@ def basic_latent_model(parameters,action_model="angle"):
     # 1. A model where the angle drives the feedback  (9 actions)
     # 2. A model where the position of the point drives the feedback (9 actions)
     # 3. A model where the distance between points drives the feedback (3 actions)
-    if (action_model=="angle"):
-        n_possible_actions = parameters["N_actions_angle"]
-    elif(action_model=="position"):
-        n_possible_actions = parameters["N_actions_position"]
-    elif(action_model=="distance"):
-        n_possible_actions = parameters["N_actions_distance"]
+    n_possible_actions = parameters["N_actions"]
     
     # An initially naive model !
     transition_stickiness = parameters["transition_stickiness"]
-    transition_concentration = parameters["transition_concentration"]
+    transition_concentration = 1.0
     b0 = transition_concentration*jnp.ones((Ns,Ns,n_possible_actions)) + transition_stickiness*jnp.expand_dims(jnp.eye(Ns),-1)
     b = [b0]
     
@@ -232,6 +295,13 @@ def basic_latent_model(parameters,action_model="angle"):
     e = jnp.ones((b[0].shape[-1],))
 
     return a,b,c,d,e,u
+
+
+
+
+
+
+
 
 def grid_latent_model(parameters,action_model="angle"):
     '''

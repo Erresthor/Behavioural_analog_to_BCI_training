@@ -141,12 +141,16 @@ def fit_mle_agent(data,static_agent,
     
     def mean_mle(_hyperparameters,_observed_data):
         return - compute_loglikelihood(_observed_data,static_agent(_hyperparameters),"mean")
-    
+
+    def sum_mle(_hyperparameters,_observed_data):
+        return - compute_loglikelihood(_observed_data,static_agent(_hyperparameters),"sum")
+        
     def generic_loss(_X,_observed_data):
         
         _hyperparameters = encoding_function(_X)
         
-        return mean_mle(_hyperparameters,_observed_data)
+        return sum_mle(_hyperparameters,_observed_data)
+        # return mean_mle(_hyperparameters,_observed_data)
     
     
     if not(true_hyperparams is None):
@@ -187,7 +191,8 @@ def fit_map_agent(data,static_agent,
             N_hyperparams,priors,
             rngkey,
             true_hyperparams=None,n_iter=10,num_steps=100,
-            initial_window = [-10,10],verbose=False):
+            initial_window = [-10,10],verbose=False,
+            ll_statistic="sum"):
     """This REALLY should have been done with a class ..."""
     
     if (priors is not None):
@@ -205,7 +210,7 @@ def fit_map_agent(data,static_agent,
         
         log_prior,_ = log_prior_func(_hyperparameters)
         
-        log_likelihood = compute_loglikelihood(_data,static_agent(_hyperparameters),"mean")
+        log_likelihood = compute_loglikelihood(_data,static_agent(_hyperparameters),ll_statistic)
         
         return (log_likelihood + log_prior)
     

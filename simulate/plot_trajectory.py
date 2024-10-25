@@ -72,7 +72,16 @@ def plot_training(ax,state_history,
         
         plot_trajectory(ax,state_history[trial],grid_shape,color,lw=line_width,alpha=alpha)
         
-        
+def plot_trial(ax,state_history,
+                  grid_shape,goal_state,
+                  line_width=4,alpha=0.2,interp_spline_param = 2,
+                  color=np.array([1.0,0.5,0.5])):
+    ax.invert_xaxis()
+    
+    plot_grid(ax,grid_shape,goal_state)
+
+    
+    plot_trajectory(ax,state_history,grid_shape,color,lw=line_width,alpha=alpha)  
     
 
 if __name__ == "__main__":

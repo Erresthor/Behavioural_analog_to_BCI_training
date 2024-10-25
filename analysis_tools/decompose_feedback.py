@@ -165,7 +165,7 @@ def decompose_real_time_feedback(_series,Nbins = 5,
     
     
     # To make it fit the observation modality, we will need to digitize it and make it one_hot !
-    # dig_means = np.digitize(means,bins)-1
+    dig_means = np.digitize(scalar_means,bins)-1
         
     # 2nd : digitize each timepoint individually, and then add all the digitized vectors together 
     # (possibly weighted to favor the most recent values ?)
@@ -187,7 +187,7 @@ def decompose_real_time_feedback(_series,Nbins = 5,
     if normalize_histogram:
         colsum = points_histograms.sum(axis=-1)
         points_histograms = points_histograms / colsum[..., np.newaxis]
-    return seen_fb,points_histograms,scalar_means
+    return seen_fb,points_histograms,(scalar_means,dig_means)
 
 def decompose_all_observations(feedbacks_series_all_subj,trial_datas_all_subj,N_FB_BINS=5,observation_ends_at_action=2):
     assert len(feedbacks_series_all_subj)==len(trial_datas_all_subj), "Input list length mismatch :("
