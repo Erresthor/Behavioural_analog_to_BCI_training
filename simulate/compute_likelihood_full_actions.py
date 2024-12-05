@@ -20,7 +20,7 @@ import actynf
 from actynf.jaxtynf.jax_toolbox import _normalize,_jaxlog
 from actynf.jaxtynf.jax_toolbox import random_split_like_tree
 
-
+# Likelihood computations and MLE + MAP fitting algorithms for a dictionnary structure
 
 def _uniform_sample_leaf(_rng_leaf,_range_leaf, size):
     """
@@ -35,6 +35,9 @@ def _uniform_sample_leaf(_rng_leaf,_range_leaf, size):
     Returns:
         _type_: _description_
     """
+    if _range_leaf.shape[0] ==3 :
+        return jr.uniform(_rng_leaf,(size,_range_leaf[-1]),minval  = _range_leaf[0], maxval =_range_leaf[1])
+    
     return jr.uniform(_rng_leaf,(size,),minval  = _range_leaf[0], maxval =_range_leaf[1])
 
 
@@ -166,7 +169,7 @@ def fit(params, obs, loss_func, optimizer, num_steps = 100,
 
 def fit_mle_agent(data,static_agent,feature_initial_range,rngkey,
             true_hyperparams=None,n_heads=10,num_steps=100,
-            start_learning_rate = 1e-1,verbose=False,):
+            start_learning_rate = 1e-1,verbose=False):
     """This REALLY should have been done with a class ..."""
     
     # The initial param encoding function : 
@@ -185,15 +188,13 @@ def fit_mle_agent(data,static_agent,feature_initial_range,rngkey,
     else :
         gt_mle = None
     
-    
-    
     # Grab a few initial starting positions
     rng_key_tree = random_split_like_tree(rngkey,feature_initial_range)
     sampler = partial(_uniform_sample_leaf,size=n_heads)
     initial_feature_vectors = tree_map(sampler,rng_key_tree,feature_initial_range)
 
 
-    # Gradient descent on the MLE :
+    # Gradient descent on the log-likelihood :
     optimizer = optax.adam(start_learning_rate)
     fit_this = partial(fit,obs=data,loss_func = mle_loss,optimizer=optimizer,num_steps = num_steps,param_history=True,verbose=verbose)
 
@@ -203,70 +204,65 @@ def fit_mle_agent(data,static_agent,feature_initial_range,rngkey,
 
 
 
+# _____________________________________________________________________________
 # MAP fitting methods : 
 def compute_log_prob(_it_param,_it_prior_dist):
-    _mapped = tree_map(lambda x,y : y.log_prob(x),_it_param,_it_prior_dist)
-    
-    if isinstance(_mapped,dict):
-        _mapped = list(_mapped.values())
-    
-    _params_lp = jnp.stack(_mapped)
-    return jnp.sum(_params_lp),_params_lp
+    _mapped = tree_map(lambda x,y : jnp.sum(y.log_prob(x)),_it_param,_it_prior_dist)
+        # Added sum here to account for vector parameters
+    return jax.tree_util.tree_reduce(lambda x,y : x+y,_mapped),_mapped
 
 
-def fit_map_agent(data,static_agent,
-            N_hyperparams,priors,
-            rngkey,
-            true_hyperparams=None,n_iter=10,num_steps=100,
-            initial_window = [-10,10],verbose=False,
-            ll_statistic="sum"):
+def fit_map_agent(data,static_agent,feature_initial_range,priors,rngkey,
+            true_hyperparams=None,n_heads=10,num_steps=100,
+            start_learning_rate = 1e-1,verbose=False):
     """This REALLY should have been done with a class ..."""
-    
-    if (priors is not None):
-        # For the MAP estimate, we assume a Mean Field approximation between the parameters of our models
-        # More complex hypothesis can be entertained when doing Bayesian Parameter Estimation (MCMC / SVI) using Pyro models 
-        assert len(priors)==N_hyperparams,"There should be as many prior distributions as there are parameters ({})".format(N_hyperparams)
-    
-    log_prior_func = partial(compute_log_prob,_it_prior_dist = priors)
     
     # The initial param encoding function : 
     _,_,_,_,_,encoding_function = static_agent(None)
-
     
-    def log_posterior(_hyperparameters,_data):
-        
+    log_prior_func = partial(compute_log_prob,_it_prior_dist = priors)
+    def log_posterior(_hyperparameters,_observed_data):
         log_prior,_ = log_prior_func(_hyperparameters)
         
-        log_likelihood = compute_loglikelihood(_data,static_agent(_hyperparameters),ll_statistic)
+        lls_tree,_ = compute_loglikelihood(_observed_data,static_agent(_hyperparameters),"sum") # One per action modality
+        log_likelihood = jax.tree_util.tree_reduce(lambda x,y : x+y,lls_tree)  # Sum them ! 
         
         return (log_likelihood + log_prior)
     
-    
-    # Minimize this :
-    def generic_loss(_X,_observed_data):
-        
+    # Minimize the negative log posterior :
+    def map_loss(_X,_observed_data):
         _hyperparameters = encoding_function(_X)
-        
         return - log_posterior(_hyperparameters,_observed_data) 
     
     
     if not(true_hyperparams is None):
-        # MLE Value of the true parameters : 
-        gt_map = - log_posterior(true_hyperparams,data)
+        # MAP Value of the true parameters : 
+        gt_map = - map_loss(true_hyperparams,data)
     else :
         gt_map = None
     
-    # Gradient descent on the MLE :
-    start_learning_rate = 1e-1
+    
+    
+    # Grab a few initial starting positions in feature space (ideally, this would be done directly in parameter space, 
+    # but it would require a decoder for all models and I can't be bothered)
+    rng_key_tree = random_split_like_tree(rngkey,feature_initial_range)
+    sampler = partial(_uniform_sample_leaf,size=n_heads)
+    initial_feature_vectors = tree_map(sampler,rng_key_tree,feature_initial_range)
+
+
+    # # Gradient descent on the log-likelihood :
+    # total_steps = epochs*(X_train.shape[0]//batch_size) + epochs
+    # exponential_decay_scheduler = optax.exponential_decay(init_value=0.0001, transition_steps=total_steps,
+    #                                                     decay_rate=0.98, transition_begin=int(total_steps*0.25),
+    #                                                     staircase=False)
+    # optimizer = optax.sgd(learning_rate=exponential_decay_scheduler) ## Initialize SGD Optimizer
+    # optimizer_state = optimizer.init(weights)
+    
+    
     optimizer = optax.adam(start_learning_rate)
+    fit_this = partial(fit,obs=data,loss_func = map_loss,optimizer=optimizer,num_steps = num_steps,param_history=True,verbose=verbose)
+
+    all_fin_params,all_losses,all_param_histories = vmap(fit_this)(initial_feature_vectors)
     
-    # Grab a few initial starting positions
-    candidates = jr.uniform(rngkey,(n_iter,N_hyperparams),minval  = initial_window[0], maxval = initial_window[1])
+    return all_fin_params,(gt_map,all_losses,all_param_histories),encoding_function
 
-    fit_this = partial(fit,obs=data,loss_func = generic_loss,optimizer=optimizer,num_steps = num_steps,param_history=True,verbose=verbose)
-
-    all_fin_params,all_losses,all_param_histories = vmap(fit_this)(candidates)
-
-    loss_history = jnp.stack(all_losses)
-    
-    return all_fin_params,(gt_map,loss_history,all_param_histories),encoding_function

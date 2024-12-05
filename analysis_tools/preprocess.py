@@ -27,7 +27,8 @@ OPTIONS_PREPROCESS_DEFAULT = {
 def get_preprocessed_data(input_trial_data,input_feedback_series,
             options = OPTIONS_PREPROCESS_DEFAULT,
             verbose=True,
-            autosave=True,autoload=True,override_save=False,label="default"):
+            autosave=True,autoload=True,override_save=False,label="default",
+            filter_angles_if_small_distance = True):
     
     data_savefolder = os.path.join("ressources","preprocessed")
     data_savepath = os.path.join(data_savefolder,label+".data")
@@ -52,9 +53,12 @@ def get_preprocessed_data(input_trial_data,input_feedback_series,
     indexes,vectorized_indexes,valid_actions = decompose_all_actions(ALL_ACTIONS,
                                     distance_bins=options["actions"]["distance_bins"],
                                     angle_N_bins=options["actions"]["angle_N_bins"],
-                                    position_N_bins_per_dim=options["actions"]["position_N_bins_per_dim"])
+                                    position_N_bins_per_dim=options["actions"]["position_N_bins_per_dim"],
+                                    filter_angles_if_small_distance = filter_angles_if_small_distance)
     pos_index,dist_idx,angle_idx = indexes
     pos_vec,dist_vec,angle_vec = vectorized_indexes
+    
+    
     if verbose :
         Nactions = float(valid_actions.flatten().shape[0])
         Nvalid = np.sum(valid_actions)
@@ -110,7 +114,8 @@ def get_preprocessed_data(input_trial_data,input_feedback_series,
 def get_preprocessed_data_from_df(subjects_df,
             options = OPTIONS_PREPROCESS_DEFAULT,
             verbose=True,
-            autosave=True,autoload=True,override_save=False,label="default"):
+            autosave=True,autoload=True,override_save=False,label="default",
+            filter_angles_if_small_distance = False):
     
     data_savefolder = os.path.join("ressources","preprocessed")
     data_savepath = os.path.join(data_savefolder,label+".data")
@@ -137,9 +142,31 @@ def get_preprocessed_data_from_df(subjects_df,
     indexes,vectorized_indexes,valid_actions = decompose_all_actions(ALL_ACTIONS,
                                     distance_bins=options["actions"]["distance_bins"],
                                     angle_N_bins=options["actions"]["angle_N_bins"],
-                                    position_N_bins_per_dim=options["actions"]["position_N_bins_per_dim"])
+                                    position_N_bins_per_dim=options["actions"]["position_N_bins_per_dim"] )
+    
+    
+    
     pos_index,dist_idx,angle_idx = indexes
     pos_vec,dist_vec,angle_vec = vectorized_indexes
+    
+        
+    
+    if filter_angles_if_small_distance:
+        # If the distance falls into the smallest category, let's replace the encoded angle by a "null" action
+        # This adds another category to the angle discretization :
+        
+        new_angle_col =jnp.expand_dims(dist_vec[...,0],-1)
+        
+        # Here are the angles that should be accounted for as "null":
+        null_angles = angle_vec*new_angle_col
+        # And the angles that may be interpreted as "true"
+        true_angles = angle_vec*(1.0 - new_angle_col)
+        
+        # We displace the null angles in a new category
+        angle_vec = jnp.concatenate([new_angle_col,true_angles],axis=-1)
+        angle_idx = jnp.argmax(angle_vec,-1)    
+    
+    
     if verbose :
         Nactions = float(valid_actions.flatten().shape[0])
         Nvalid = np.sum(valid_actions)

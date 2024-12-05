@@ -34,10 +34,10 @@ def discretized_distribution_from_value(x,number_of_ticks):
 @partial(jit, static_argnames=["num_bins"])
 def discretize_normal_pdf(mean, std, num_bins, lower_bound, upper_bound):
     """ Thank you ChatGPT ! """    
+    
     # I didn't want to do this, but this may be needed to avoid unwated edge-cases : 
     # Prevent std from falling below a certain value, else the distribution is completely flat
     # which is the opposite of a very well defined observation modality: 
-    
     K = 0.1   # Empirical constant
     std = jnp.clip(std,K*1/num_bins)
     
