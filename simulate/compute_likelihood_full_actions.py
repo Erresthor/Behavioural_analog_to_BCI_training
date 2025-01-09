@@ -40,8 +40,17 @@ def _uniform_sample_leaf(_rng_leaf,_range_leaf, size):
     
     return jr.uniform(_rng_leaf,(size,),minval  = _range_leaf[0], maxval =_range_leaf[1])
 
-
-
+def get_random_parameter_set(feature_initial_range,rngkey,n_heads = 1,autosqueeze = False):
+    # Grab a few initial starting positions
+    rng_key_tree = random_split_like_tree(rngkey,feature_initial_range)
+    
+    sampler = partial(_uniform_sample_leaf,size=n_heads)        
+            
+    initial_feature_vectors = tree_map(sampler,rng_key_tree,feature_initial_range)
+    
+    if autosqueeze:
+        return jax.tree_map(lambda x : jnp.squeeze(x,axis=0),initial_feature_vectors)
+    return initial_feature_vectors
 
 
 def compute_predicted_actions(data,agent_functions):

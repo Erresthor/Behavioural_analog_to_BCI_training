@@ -6,6 +6,29 @@ from jax import grad,jit,vmap
 from jax.scipy.stats import norm
 
 from functools import partial
+from actynf.jaxtynf.jax_toolbox import _jaxlog
+
+def tree_stack(trees):
+    return jax.tree.map(lambda *v: jnp.stack(v), *trees)
+
+def compute_js_controllability(transition_matrix):
+    """ 
+    An estimate of system controllability based on the Jensen Shannon Divergence learnt action transitions.
+    Normalized between 0 and 1.
+    """
+    assert transition_matrix.ndim == 3, "JS controllability estimator expects a 3dimensionnal matrix !"
+    Ns = transition_matrix.shape[0]
+    
+    M = jnp.mean(transition_matrix,axis=2)  # The average transition regardless of action
+
+    # KL dir between an action and M  : 
+    # kl_dirs = jnp.sum(transitions*(_jaxlog(transitions) - _jaxlog(jnp.expand_dims(M,-1))),axis=0)
+    kl_dirs = jnp.sum(transition_matrix*(_jaxlog(transition_matrix) - _jaxlog(jnp.expand_dims(M,-1))),axis=0)
+    
+    norm_jsd = jnp.mean(kl_dirs,axis=(0,1))/_jaxlog(Ns)
+    
+    return norm_jsd
+
 
 def distance(tuple1,tuple2,normed=False,grid_size=2):
     linear_dist =  np.sqrt((tuple1[0]-tuple2[0])*(tuple1[0]-tuple2[0])+(tuple1[1]-tuple2[1])*(tuple1[1]-tuple2[1]))
@@ -159,12 +182,6 @@ def generate_random_vector(N,rng):
 def generate_random_array(N):
     return np.random.random((N,))
 
-
-# Generalize findings across states : 
-def cross_state_gen():
-    return
-
-
 def weighted_padded_roll(matrix,generalize_fadeout,roll_axes=[-1,-2]):
     assert matrix.ndim == 2,"Weighted Padded Roll only implemented for 2D arrays"
     K = matrix.shape[0]
@@ -265,39 +282,3 @@ if __name__=="__main__":
         axes[1,2].set_title("Updated gen. transition mapping")
         axes[1,2].imshow(gen_B[...,action_id],vmin=0,vmax=1.0)
     plt.show()
-    
-    
-    
-    
-    # import matplotlib.pyplot as plt
-    # fig,axes = plt.subplots(2,2,figsize=(10,5))
-    # axes[0,0].set_title("Raw state")
-    # axes[0,0].imshow(raw_action_state,vmin=0,vmax=1.0)
-    # axes[0,1].set_title("Generalized state")
-    # axes[0,1].imshow(generalized_action_state,vmin=0,vmax=1.0)
-    # axes[1,0].set_title("Raw updated Qtable")
-    # axes[1,0].imshow(raw_Q)
-    # axes[1,1].set_title("Generalized updated Qtable")
-    # axes[1,1].imshow(gen_Q)
-    # plt.show()
-        
-    # std = 0.000005
-    # Ns = 33
-    
-    # all_scalar_fb_values = np.linspace(0,1,Ns)   # Assume that the bigger the index of the state, the better the feedback
-    
-    # discretize_distance_normal_function = partial(discretize_normal_pdf,std=std,num_bins = 1000,lower_bound= -1e-5 ,upper_bound = 1.0 + 1e-5)
-    # stickiness,edges = vmap(discretize_distance_normal_function,out_axes=-1)(all_scalar_fb_values)
-    
-    # print(all_scalar_fb_values)
-    # print(np.round(np.array(edges),2))
-    
-    
-    
-    # print(stickiness)
-    
-    
-    # import matplotlib.pyplot as plt
-    
-    # plt.imshow(stickiness,vmin=0,vmax=1)
-    # plt.show()
