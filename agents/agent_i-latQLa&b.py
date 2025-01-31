@@ -25,7 +25,7 @@ from .models_utils import sample_dict_of_categoricals
 
 
 
-def lat_assymetric_QL_agent_with_biais(hyperparameters,constants):
+def agent(hyperparameters,constants):
     """Model to simulate agents with a latent model of the task. 
     Descisions are taken using a mix of qtable and initial biais. 
     The Qtable is progressively learnt and allow generalization between states.
@@ -82,9 +82,9 @@ def lat_assymetric_QL_agent_with_biais(hyperparameters,constants):
                     
                     "transition_alpha" : jax.nn.sigmoid(action_dim_features["transition_alpha"]),
                     
-                    "perception_sigma" : jax.nn.softplus(action_dim_features["perception_sigma"]),
+                    "perception_sigma" : jnp.exp(action_dim_features["perception_sigma"]),
                     
-                    "gamma_generalize" : jax.nn.softplus(action_dim_features["gamma_generalize"])
+                    "gamma_generalize" : jnp.exp(action_dim_features["gamma_generalize"])
                 }
         return encoded_hyperparameters
 

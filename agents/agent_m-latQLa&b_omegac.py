@@ -65,7 +65,7 @@ def agent(hyperparameters,constants,focused_attention=True):
         
         encoded_hyperparameters["transition_alpha"] = jax.nn.sigmoid(_X["transition_alpha"])
         encoded_hyperparameters["perception_sigma"] = jnp.exp(_X["perception_sigma"])
-        encoded_hyperparameters["gamma_generalize"] =  10.0*jax.nn.sigmoid(_X["gamma_generalize"])
+        encoded_hyperparameters["gamma_generalize"] = jnp.exp(_X["gamma_generalize"])
         
         # Action dimension related params :
         for action_dimension in ["position","angle","distance"]:

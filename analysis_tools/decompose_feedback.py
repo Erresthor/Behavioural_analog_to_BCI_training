@@ -139,8 +139,8 @@ def get_feedback_differences(feedback_series,true_feedback_values):
 def decompose_real_time_feedback(_series,Nbins = 5,
                                  eps =1e-6,
                                  normalize_histogram = True): 
-    bins = np.linspace(0.0,1.0+eps,Nbins+1)
-        
+    bins = np.linspace(0.0-eps,1.0+eps,Nbins+1)
+    
     # Let's note which observations were not seen by the subjects : (0-shaped arrays)
     ope = (lambda x : 0 if x.shape[0]==0 else 1)
     seen_fb_raw = np.array([[ope(j) for j in i]  for i in _series])
@@ -181,9 +181,16 @@ def decompose_real_time_feedback(_series,Nbins = 5,
             obs_histogram[-1] = 1
         
         return obs_histogram
-        
+    
+    
+    
     points_histograms = np.array([[_weighted_approach(j) for j in i]  for i in _series])
-
+    # for trial in range(10):
+    #     for t in range(10):
+    #         print(_series[trial][t][...,1])
+    #         print(points_histograms[trial][t])
+    # print("---")
+    
     if normalize_histogram:
         colsum = points_histograms.sum(axis=-1)
         points_histograms = points_histograms / colsum[..., np.newaxis]
@@ -206,7 +213,7 @@ def decompose_all_observations(feedbacks_series_all_subj,trial_datas_all_subj,N_
 
         subject_i_action_1_tstamps = subject_i_timings["action"]["start"]
         subject_i_action_2_tstamps = subject_i_timings["action"]["end"]
-
+        
         feedback_series=  get_all_feedback_series(subj_feedback_series,
                                                 subject_i_start_trials,subject_i_end_trials,
                                                 subject_i_start_tsteps,subject_i_end_tsteps,
@@ -222,13 +229,3 @@ def decompose_all_observations(feedbacks_series_all_subj,trial_datas_all_subj,N_
         obs_series_all.append(feedback_series)
         obs_scalar_all.append(obs_scalar)
     return np.array(obs_bool_all),np.array(obs_histogram_all),np.array(obs_scalar_all),obs_series_all
-
-if __name__ == '__main__':
-    # We're also interested in the trial timing data, to know precisely when an action was conducted, and when the gauge started moving :
-    
-
-    i = 1     # 42 is 0, 0 is 0.23, 5 is 0.4
-
-    subject_i_features = subjects_df.iloc[i]
-    print("Noise intensity : {:.2f}".format(subject_i_features["feedback_noise_intensity"]))
-    

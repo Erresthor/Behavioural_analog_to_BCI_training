@@ -26,7 +26,7 @@ from .models_utils import sample_dict_of_categoricals
 
 
 # This agent is a QLearning agent that learns interstate transitions !
-def agent(hyperparameters,constants,focused_attention=True):
+def agent(hyperparameters,constants,focused_learning=True):
     
     if hyperparameters is None:
         hyperparameters = {
@@ -69,7 +69,7 @@ def agent(hyperparameters,constants,focused_attention=True):
         
         encoded_hyperparameters["transition_alpha"] = jax.nn.sigmoid(_X["transition_alpha"])
         encoded_hyperparameters["perception_sigma"] = jnp.exp(_X["perception_sigma"])
-        encoded_hyperparameters["gamma_generalize"] =  10.0*jax.nn.sigmoid(_X["gamma_generalize"])
+        encoded_hyperparameters["gamma_generalize"] =  jnp.exp(_X["gamma_generalize"])
         
         # Action dimension related params :
         for action_dimension in ["position","angle","distance"]:
@@ -153,7 +153,7 @@ def agent(hyperparameters,constants,focused_attention=True):
             # Static because there have been problems with getting values
             # out and in dictionnaries ...
         
-        if focused_attention:
+        if focused_learning:
             # TODO : learning attention and testing attention may be differentiated !
             attention_learning_weights = jax.nn.softmax(hyperparameters["beta_omega"]*omega)
             learning_weights = {key:omega_v for key,omega_v in zip(keys,attention_learning_weights)}
@@ -175,7 +175,7 @@ def agent(hyperparameters,constants,focused_attention=True):
             was_a_last_action = jnp.sum(last_action_dim)  # No update if there was no last action
             
             
-            if focused_attention:
+            if focused_learning:
                 lr_dim = learning_weights[action_dimension]
             else :
                 lr_dim = 1.0
@@ -282,7 +282,7 @@ def agent(hyperparameters,constants,focused_attention=True):
             # Static because there have been problems with getting values
             # out and in dictionnaries ...
         
-        if focused_attention:
+        if focused_learning:
             # TODO : learning attention and testing attention may be differentiated !
             attention_learning_weights = jax.nn.softmax(hyperparameters["beta_omega"]*omega)
             learning_weights = {key:omega_v for key,omega_v in zip(keys,attention_learning_weights)}
@@ -304,7 +304,7 @@ def agent(hyperparameters,constants,focused_attention=True):
             was_a_last_action = jnp.sum(last_action_dim)  # No update if there was no last action
             
             
-            if focused_attention:
+            if focused_learning:
                 lr_dim = learning_weights[action_dimension]
             else :
                 lr_dim = 1.0

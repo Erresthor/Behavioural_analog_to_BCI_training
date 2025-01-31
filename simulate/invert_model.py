@@ -8,9 +8,22 @@ from functools import partial
 from .compute_likelihood_full_actions import compute_loglikelihood,fit_mle_agent,fit_map_agent
 from .models_utils import tree_stack
 
-def invert_data_for_single_model(data_all_subjects,model_contents,
+import os
+import pickle
+
+
+def invert_data_for_single_model(data_all_subjects,model_contents,method="mle",
                                 standard_n_heads = 20,standard_n_steps = 500,lr = 5e-2,
-                                rngkey = jr.PRNGKey(0),option_verbose = True):
+                                rngkey = jr.PRNGKey(0),option_verbose = True,
+                                save=False ,save_directory = "default",override = False):
+    
+    if os.path.exists(save_directory):
+        if not override:
+            with open(save_directory, 'rb') as inp:
+                existing_results = pickle.load(inp)
+            return existing_results
+    
+    
     formatted_stimuli,_,_,_,_ = data_all_subjects
     Nsubj,Ntrials,Ntimesteps,_ = formatted_stimuli[0].shape
     
@@ -28,7 +41,7 @@ def invert_data_for_single_model(data_all_subjects,model_contents,
     
     # Agent functions
     _,_,_,_,_,encoder = agent(None)
-    def fit_agent(_data_one_subject,_fit_rng_key,method = "mle"):  
+    def fit_agent(_data_one_subject,_fit_rng_key):  
         if bypass_fit:
             _opt_vectors = jnp.zeros((model_heads,))
             _lls =   vmap(lambda x : compute_loglikelihood(_data_one_subject,agent(encoder(x)),'sum'))(_opt_vectors)
@@ -70,8 +83,7 @@ def invert_data_for_single_model(data_all_subjects,model_contents,
         fit_results = {
             "losses_hist" : loss_histories,
             "params" : best_params,
-            "logliks" : lls,
-            "encoder" : encoder
+            "logliks" : lls
         }
     else : 
         random_keys_all_subj = jr.split(rngkey,num = Nsubj)
@@ -85,40 +97,51 @@ def invert_data_for_single_model(data_all_subjects,model_contents,
             # Extract the subj-th element of each array :
             (formatted_stimuli,bool_stimuli,rewards,actions,timesteps) = data_all_subjects
             
-            data_this_subject = (formatted_stimuli[0][subj],bool_stimuli[0][subj],rewards[subj],
+            data_this_subject = ([formatted_stimuli[0][subj]],[bool_stimuli[0][subj]],rewards[subj],
                                 {dim : table[subj] for dim,table in actions.items()},timesteps[subj])
             
             loss_hist, opt_vec, lls = fit_agent(data_this_subject,subj_key)
             clean_this.append({
                 "losses_hist" : loss_hist,
                 "params" : opt_vec,
-                "logliks" : lls,
-                "encoder" : encoder
+                "logliks" : lls
             })
             
         # Clean the list here
         def cleaner(_list):
             new_dict = {key:tree_stack([el[key] for el in _list]) for key in ["losses_hist","params","logliks"]}
-            new_dict["encoder"] = _list[0]["encoder"]
+            # new_dict["encoder"] = _list[0]["encoder"]
             return new_dict
         
         fit_results = cleaner(clean_this)
-        
+    
+    
+    if save :
+        with open(save_directory, 'wb') as outp:
+            pickle.dump(fit_results, outp,pickle.HIGHEST_PROTOCOL)
+    
     return fit_results
  
-    # results_dict[agent_name] = fit_results
-
-def invert_data_for_library_of_models(data_all_subjects,model_library,
+def invert_data_for_library_of_models(data_all_subjects,model_library,method="mle",
                                       standard_n_heads = 20,standard_n_steps = 500,lr = 5e-2,
-                                      rngkey = jr.PRNGKey(0),option_verbose = True):
-
+                                      rngkey = jr.PRNGKey(0),option_verbose = True,
+                                      save=False ,save_directory = "default",override = False):
+    if save :
+        if not os.path.exists(save_directory):
+            os.makedirs(save_directory)
+    
     results_dict = {}
     for agent_name, agent_contents in model_library.items():
         print("     -> Agent : {}".format(agent_name))
+        
+        model_path = os.path.join(save_directory,agent_name)
+        
+        
         rngkey,local_key = jr.split(rngkey)
         
-        results_dict[agent_name] = invert_data_for_single_model(data_all_subjects,agent_contents,
+        results_dict[agent_name] = invert_data_for_single_model(data_all_subjects,agent_contents,method=method,
                                                                 standard_n_heads = standard_n_heads,standard_n_steps = standard_n_steps,lr = lr,
-                                                                rngkey = local_key,option_verbose = option_verbose)
-    
+                                                                rngkey = local_key,option_verbose = option_verbose,
+                                                                save=save,save_directory=model_path,override=override)       
+        
     return results_dict
