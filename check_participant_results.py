@@ -168,7 +168,7 @@ if __name__=="__main__":
     # subj ="66019988a3d63339927cc80f" 
     # subj = "5f0559d1bc410b85707c58a3"
 
-    subj = "665e8784960919e34257696d"
+    subj = "665e8784960919e34257696d" # Put prolific participant ID here
 
             
     print(check_subject_recordings(subj,True,True))
