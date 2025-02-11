@@ -2,7 +2,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt 
 from scipy.interpolate import make_interp_spline
-from .models_utils import ind2sub
+from .simulate_utils import ind2sub
 
 def plot_grid(ax,grid_shape,goal_state,color=np.array([0.0,0.0,0.0,0.5])):
     lw = 20*1e-3

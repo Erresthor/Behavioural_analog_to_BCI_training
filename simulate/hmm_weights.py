@@ -7,7 +7,7 @@ from functools import partial
 from actynf.jaxtynf.jax_toolbox import tensorify
 
 from actynf.base.function_toolbox import normalize
-from .models_utils import sub2ind,ind2sub,distance,discretized_distribution_from_value,discretize_normal_pdf
+from .simulate_utils import sub2ind,ind2sub,distance,discretized_distribution_from_value,discretize_normal_pdf
 
 from jax.lax import stop_gradient
 

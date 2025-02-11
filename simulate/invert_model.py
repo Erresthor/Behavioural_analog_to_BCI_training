@@ -6,14 +6,14 @@ import jax.numpy as jnp
 from functools import partial
 
 from .compute_likelihood_full_actions import compute_loglikelihood,fit_mle_agent,fit_map_agent
-from .models_utils import tree_stack
+from .simulate_utils import tree_stack
 
 import os
 import pickle
 
 
 def invert_data_for_single_model(data_all_subjects,model_contents,method="mle",
-                                standard_n_heads = 20,standard_n_steps = 500,lr = 5e-2,
+                                standard_n_heads = 20,standard_n_steps = 500,lr = 5e-2,lr_scheduler=None,
                                 rngkey = jr.PRNGKey(0),option_verbose = True,
                                 save=False ,save_directory = "default",override = False):
     
@@ -28,9 +28,16 @@ def invert_data_for_single_model(data_all_subjects,model_contents,method="mle",
     Nsubj,Ntrials,Ntimesteps,_ = formatted_stimuli[0].shape
     
     
-    agent = model_contents["model"]
-    initial_parameter_range = model_contents["ranges"]
-    agent_priors = model_contents["priors"]
+    agent_object = model_contents["agent"]
+    encoder = agent_object.get_encoder()
+    # initial_parameter_range = agent_object.get_initial_ranges()
+    # agent_priors = model_contents["priors"] if ("priors" in model_contents) else agent_object.get_priors()
+    
+    _local_rngkey,rngkey = jr.split(rngkey)
+    total_infered_vals,_ = jax.tree.flatten(jax.tree_util.tree_map(lambda x : x.size,agent_object.get_random_parameters(_local_rngkey)))
+    total_infered_vals = sum(total_infered_vals)
+    print(total_infered_vals)
+    
     
     # Model specific options :
     model_steps = model_contents["n_steps"] if ("n_steps" in model_contents) else standard_n_steps
@@ -40,38 +47,30 @@ def invert_data_for_single_model(data_all_subjects,model_contents,method="mle",
     
     
     # Agent functions
-    _,_,_,_,_,encoder = agent(None)
     def fit_agent(_data_one_subject,_fit_rng_key):  
-        if bypass_fit:
+        if (bypass_fit | (total_infered_vals==0)):
             _opt_vectors = jnp.zeros((model_heads,))
-            _lls =   vmap(lambda x : compute_loglikelihood(_data_one_subject,agent(encoder(x)),'sum'))(_opt_vectors)
+            _lls =   vmap(lambda x : compute_loglikelihood(_data_one_subject,agent_object.get_all_functions(encoder(x)),'sum'))(_opt_vectors)
             return None,None,_lls
-            
-            
+        
         if method.lower() == "mle":
-            _opt_vectors,(_,_loss_history,_param_history),_encoding_function = fit_mle_agent(_data_one_subject,agent,
-                                                                        initial_parameter_range,
-                                                                        _fit_rng_key,
-                                                                        true_hyperparams=None,                          
-                                                                        num_steps=model_steps,n_heads=model_heads,
-                                                                        start_learning_rate=lr,
+            _opt_vectors,(_,_loss_history,_param_history),_encoding_function = fit_mle_agent(_data_one_subject,agent_object,_fit_rng_key,
+                                                                        true_hyperparams=None, num_steps=model_steps,n_heads=model_heads,
+                                                                        start_learning_rate=lr,lr_schedule_dict=lr_scheduler,
                                                                         verbose=option_verbose)
         
         elif method.lower() == "map":
             # Multi-iteration based MAP : (we randomize the initial point and try to find minimas)
-            _opt_vectors,(_,_loss_history,_param_history),_encoding_function = fit_map_agent(_data_one_subject,agent,
-                                                                        initial_parameter_range,agent_priors,
-                                                                        _fit_rng_key,
-                                                                        true_hyperparams=None,                          
-                                                                        num_steps=model_steps,n_heads=model_heads,
-                                                                        start_learning_rate=lr,
+            _opt_vectors,(_,_loss_history,_param_history),_encoding_function = fit_map_agent(_data_one_subject,agent_object,_fit_rng_key,
+                                                                        true_hyperparams=None, num_steps=model_steps,n_heads=model_heads,
+                                                                        start_learning_rate=lr,lr_schedule_dict=lr_scheduler, 
                                                                         verbose=option_verbose)
         
         else :            
             raise NotImplementedError("Unrecognized fitting method : {}".format(method))
         
         # Regardless of the cost function, let's estimate the log-likelihood of the fitted estimators :
-        _lls =   vmap(lambda x : compute_loglikelihood(_data_one_subject,agent(_encoding_function(x)),'sum'))(_opt_vectors)
+        _lls =   vmap(lambda x : compute_loglikelihood(_data_one_subject,agent_object.get_all_functions(_encoding_function(x)),'sum'))(_opt_vectors)
         return _loss_history,_opt_vectors,_lls
     
     
@@ -115,7 +114,6 @@ def invert_data_for_single_model(data_all_subjects,model_contents,method="mle",
         
         fit_results = cleaner(clean_this)
     
-    
     if save :
         with open(save_directory, 'wb') as outp:
             pickle.dump(fit_results, outp,pickle.HIGHEST_PROTOCOL)
@@ -123,7 +121,7 @@ def invert_data_for_single_model(data_all_subjects,model_contents,method="mle",
     return fit_results
  
 def invert_data_for_library_of_models(data_all_subjects,model_library,method="mle",
-                                      standard_n_heads = 20,standard_n_steps = 500,lr = 5e-2,
+                                      standard_n_heads = 20,standard_n_steps = 500,lr = 5e-2,lr_scheduler=None,
                                       rngkey = jr.PRNGKey(0),option_verbose = True,
                                       save=False ,save_directory = "default",override = False):
     if save :
@@ -140,7 +138,8 @@ def invert_data_for_library_of_models(data_all_subjects,model_library,method="ml
         rngkey,local_key = jr.split(rngkey)
         
         results_dict[agent_name] = invert_data_for_single_model(data_all_subjects,agent_contents,method=method,
-                                                                standard_n_heads = standard_n_heads,standard_n_steps = standard_n_steps,lr = lr,
+                                                                standard_n_heads = standard_n_heads,standard_n_steps = standard_n_steps,
+                                                                lr = lr,lr_scheduler=lr_scheduler,
                                                                 rngkey = local_key,option_verbose = option_verbose,
                                                                 save=save,save_directory=model_path,override=override)       
         

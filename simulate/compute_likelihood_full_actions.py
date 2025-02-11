@@ -20,31 +20,14 @@ import actynf
 from actynf.jaxtynf.jax_toolbox import _normalize,_jaxlog
 from actynf.jaxtynf.jax_toolbox import random_split_like_tree
 
+from .simulate_utils import uniform_sample_leaf
+
 # Likelihood computations and MLE + MAP fitting algorithms for a dictionnary structure
-
-def _uniform_sample_leaf(_rng_leaf,_range_leaf, size):
-    """
-    Given a jr.PRNGKey and a (2,)-shaped tensor of lower and upper bound, 
-    return a randpm tensor of size "size" sampled from U(lb,ub)
-
-    Args:
-        _rng_leaf (_type_): _description_
-        _range_leaf (_type_): _description_
-        size (_type_): _description_
-
-    Returns:
-        _type_: _description_
-    """
-    if _range_leaf.shape[0] ==3 :
-        return jr.uniform(_rng_leaf,(size,_range_leaf[-1]),minval  = _range_leaf[0], maxval =_range_leaf[1])
-    
-    return jr.uniform(_rng_leaf,(size,),minval  = _range_leaf[0], maxval =_range_leaf[1])
-
 def get_random_parameter_set(feature_initial_range,rngkey,n_heads = 1,autosqueeze = False):
     # Grab a few initial starting positions
     rng_key_tree = random_split_like_tree(rngkey,feature_initial_range)
     
-    sampler = partial(_uniform_sample_leaf,size=n_heads)        
+    sampler = partial(uniform_sample_leaf,size=n_heads)        
             
     initial_feature_vectors = tree_map(sampler,rng_key_tree,feature_initial_range)
     
@@ -104,10 +87,9 @@ def compute_predicted_actions(data,agent_functions):
         
         
         _,(_predicted_actions,_trial_states,_trial_other_data) = jax.lax.scan(__scan_timestep, (_initial_state),_expanded_data_trial)
+        _removed_last_predicted_action = tree_map(lambda x : x[:-1,...],_predicted_actions)
         
         _new_params = agent_learn((_rewards_trial,_observations_trial,_trial_states,_actions_trial),_agent_params)
-        
-        _removed_last_predicted_action = tree_map(lambda x : x[:-1,...],_predicted_actions)
         
         return _new_params,(_removed_last_predicted_action,(_trial_states,_trial_other_data))
 
@@ -176,13 +158,16 @@ def fit(params, obs, loss_func, optimizer, num_steps = 100,
     return params,jnp.array(losses),list_params
 
 
-def fit_mle_agent(data,static_agent,feature_initial_range,rngkey,
+def fit_mle_agent(data,agent_object,rngkey,
             true_hyperparams=None,n_heads=10,num_steps=100,
-            start_learning_rate = 1e-1,verbose=False):
-    """This REALLY should have been done with a class ..."""
+            start_learning_rate = 1e-1,lr_schedule_dict = None,
+            verbose=False):
     
     # The initial param encoding function : 
-    _,_,_,_,_,encoding_function = static_agent(None)
+    encoding_function = agent_object.get_encoder()
+    feature_initial_range = agent_object.get_initial_ranges()
+    static_agent = partial(agent_object.get_all_functions)
+    
     
      # The loss function we use :
     def mle_loss(_X,_observed_data):
@@ -199,18 +184,23 @@ def fit_mle_agent(data,static_agent,feature_initial_range,rngkey,
     
     # Grab a few initial starting positions
     rng_key_tree = random_split_like_tree(rngkey,feature_initial_range)
-    sampler = partial(_uniform_sample_leaf,size=n_heads)
+    sampler = partial(uniform_sample_leaf,size=n_heads)
     initial_feature_vectors = tree_map(sampler,rng_key_tree,feature_initial_range)
 
 
     # Gradient descent on the log-likelihood :
-    optimizer = optax.adam(start_learning_rate)
+    if lr_schedule_dict is None : 
+        lr_schedule_dict = {1000: start_learning_rate/2.0, 5000: start_learning_rate/10.0} # Change at step 1000 and 5000 
+    lr_schedule = optax.piecewise_constant_schedule(
+        init_value=start_learning_rate,
+        boundaries_and_scales=  lr_schedule_dict 
+    )
+    optimizer = optax.adam(lr_schedule)
     fit_this = partial(fit,obs=data,loss_func = mle_loss,optimizer=optimizer,num_steps = num_steps,param_history=True,verbose=verbose)
 
     all_fin_params,all_losses,all_param_histories = vmap(fit_this)(initial_feature_vectors)
     
     return all_fin_params,(gt_mle,all_losses,all_param_histories),encoding_function
-
 
 
 # _____________________________________________________________________________
@@ -221,16 +211,18 @@ def compute_log_prob(_it_param,_it_prior_dist):
     return jax.tree_util.tree_reduce(lambda x,y : x+y,_mapped),_mapped
 
 
-def fit_map_agent(data,static_agent,feature_initial_range,priors,rngkey,
+def fit_map_agent(data,agent_object,rngkey,
             true_hyperparams=None,n_heads=10,num_steps=100,
-            start_learning_rate = 1e-1, lr_schedule_dict = None,
+            start_learning_rate = 1e-1,lr_schedule_dict = None,
             verbose=False):
-    """This REALLY should have been done with a class ..."""
     
-    # The initial param encoding function : 
-    _,_,_,_,_,encoding_function = static_agent(None)
+    encoding_function = agent_object.get_encoder()
+    feature_initial_range = agent_object.get_initial_ranges()
+    priors = agent_object.get_priors()
+    static_agent = partial(agent_object.get_all_functions)
     
     log_prior_func = partial(compute_log_prob,_it_prior_dist = priors)
+    
     def log_posterior(_hyperparameters,_observed_data):
         log_prior,_ = log_prior_func(_hyperparameters)
         
@@ -256,21 +248,11 @@ def fit_map_agent(data,static_agent,feature_initial_range,priors,rngkey,
     # Grab a few initial starting positions in feature space (ideally, this would be done directly in parameter space, 
     # but it would require a decoder for all models and I can't be bothered)
     rng_key_tree = random_split_like_tree(rngkey,feature_initial_range)
-    sampler = partial(_uniform_sample_leaf,size=n_heads)
+    sampler = partial(uniform_sample_leaf,size=n_heads)
     initial_feature_vectors = tree_map(sampler,rng_key_tree,feature_initial_range)
-
-
-    # # Gradient descent on the log-likelihood :
-    # total_steps = epochs*(X_train.shape[0]//batch_size) + epochs
-    # exponential_decay_scheduler = optax.exponential_decay(init_value=0.0001, transition_steps=total_steps,
-    #                                                     decay_rate=0.98, transition_begin=int(total_steps*0.25),
-    #                                                     staircase=False)
-    # optimizer = optax.sgd(learning_rate=exponential_decay_scheduler) ## Initialize SGD Optimizer
-    # optimizer_state = optimizer.init(weights)
     
     if lr_schedule_dict is None : 
         lr_schedule_dict = {1000: start_learning_rate/2.0, 5000: start_learning_rate/10.0} # Change at step 1000 and 5000 
-    
     lr_schedule = optax.piecewise_constant_schedule(
         init_value=start_learning_rate,
         boundaries_and_scales=  lr_schedule_dict 
