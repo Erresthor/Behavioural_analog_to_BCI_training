@@ -223,7 +223,8 @@ def compute_log_prob(_it_param,_it_prior_dist):
 
 def fit_map_agent(data,static_agent,feature_initial_range,priors,rngkey,
             true_hyperparams=None,n_heads=10,num_steps=100,
-            start_learning_rate = 1e-1,verbose=False):
+            start_learning_rate = 1e-1, lr_schedule_dict = None,
+            verbose=False):
     """This REALLY should have been done with a class ..."""
     
     # The initial param encoding function : 
@@ -267,8 +268,14 @@ def fit_map_agent(data,static_agent,feature_initial_range,priors,rngkey,
     # optimizer = optax.sgd(learning_rate=exponential_decay_scheduler) ## Initialize SGD Optimizer
     # optimizer_state = optimizer.init(weights)
     
+    if lr_schedule_dict is None : 
+        lr_schedule_dict = {1000: start_learning_rate/2.0, 5000: start_learning_rate/10.0} # Change at step 1000 and 5000 
     
-    optimizer = optax.adam(start_learning_rate)
+    lr_schedule = optax.piecewise_constant_schedule(
+        init_value=start_learning_rate,
+        boundaries_and_scales=  lr_schedule_dict 
+    )
+    optimizer = optax.adam(lr_schedule)
     fit_this = partial(fit,obs=data,loss_func = map_loss,optimizer=optimizer,num_steps = num_steps,param_history=True,verbose=verbose)
 
     all_fin_params,all_losses,all_param_histories = vmap(fit_this)(initial_feature_vectors)

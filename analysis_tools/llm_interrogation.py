@@ -101,3 +101,4 @@ def ask_llm(llm_client,filepath,question,all_tasks_results,
         # with file_path.open("wb") as file:
         #     pickle.dump(all_llms_results, file)
         print("Updated dictionary at {}.".format(file_path))
+    return all_llms_results
