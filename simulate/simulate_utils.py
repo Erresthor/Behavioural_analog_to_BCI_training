@@ -26,7 +26,7 @@ def uniform_sample_leaf(_rng_leaf,_range_leaf, size):
         _type_: _description_
     """
     if _range_leaf.shape[0] ==3 :
-        return jr.uniform(_rng_leaf,(size,_range_leaf[-1]),minval  = _range_leaf[0], maxval =_range_leaf[1])
+        return jnp.squeeze(jr.uniform(_rng_leaf,(size,_range_leaf[-1]),minval  = _range_leaf[0], maxval =_range_leaf[1]))
     
     return jr.uniform(_rng_leaf,(size,),minval  = _range_leaf[0], maxval =_range_leaf[1])
 

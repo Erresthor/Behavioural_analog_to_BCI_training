@@ -3,9 +3,34 @@ import pymongo
 import numpy as np
 import csv
 import pickle 
+import json
 
 from database_handling.access_remote_collections import get_complete_collection
 
+LOCAL_SAVE_PATH = os.path.join("ressources","local_experiment_saves","local_database.json") 
+
+def save_full_collection_locally(filepath = LOCAL_SAVE_PATH):
+    if os.path.exists(filepath):
+        print(f"File '{filepath}' already exists.")  # Or prompt for action
+        return
+      
+    # 1. Get the completed recordings from Atlas MongoDB :
+    collection_complete = get_complete_collection()
+    
+    data = list(collection_complete.find())
+    # Save the data to a JSON file
+    with open(filepath, "w") as json_file:
+        json.dump(data, json_file, default=str)  # default=str handles ObjectId serialization
+
+    print(f"Exported {len(data)} documents to 'local_collection.json'")
+    return
+
+def load_local_data_into_pymongo_collection(filepath = LOCAL_SAVE_PATH):
+    
+    with open(filepath, "r") as json_file:
+        loaded_data = json.load(json_file)
+    
+    return loaded_data
 
 # Here, we save the raw database (in case something bad happens to the remote database)
 def save_collection_locally(internal_task_id,savepath=os.path.join("ressources","local_experiment_saves")):
@@ -53,11 +78,19 @@ def save_collection_locally(internal_task_id,savepath=os.path.join("ressources",
     return save_this_locally,subject_ids_concerned
 
 
+
+from database_handling.database_extract import get_all_subject_data_from_internal_task_id
+
 if __name__ == "__main__":
     
-    LOCAL_SAVE_PATH = os.path.join("ressources","local_experiment_saves") 
-                # Relative to the root folder
     
-    _,c = save_collection_locally("002",LOCAL_SAVE_PATH)
-    print(c)
-    print("("+str(len(c))+" subjects)")
+    #             # Relative to the root folder
+    
+    # _,c = save_collection_locally("003",LOCAL_SAVE_PATH)
+    # print(c)
+    # print("("+str(len(c))+" subjects)")
+    
+        
+    full_coll_from_local = get_all_subject_data_from_internal_task_id("002")
+    
+    print(len(full_coll_from_local))

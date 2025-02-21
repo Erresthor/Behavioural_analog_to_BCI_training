@@ -49,6 +49,11 @@ def compute_predicted_actions(data,agent_functions):
 
     Returns:
         _type_: _description_
+        
+        
+    Note : the high memory usage of this function is partly due to it storing the full model states across all timepoints and returning them. 
+    We should make a simple function with minimum memory usage for fitting and a bigger one with full reporting (states AND parameters) to monitor
+    probable states.
     """
     init_params,init_state,_,agent_learn,predict,_ = agent_functions
     
@@ -79,27 +84,99 @@ def compute_predicted_actions(data,agent_functions):
         
         def __scan_timestep(__carry,__data_timestep):
             __agent_state = __carry
-                    
+            
             __new_state,__predicted_action,__other_data = predict(__data_timestep,__agent_state,_agent_params)        
             
-            return __new_state,(__predicted_action,__new_state,__other_data)
+            (_,_,_,__perceived_action_timestep,_) = __data_timestep
+
+            return __new_state,(__predicted_action,__perceived_action_timestep,__new_state,__other_data)
         
-        
-        
-        _,(_predicted_actions,_trial_states,_trial_other_data) = jax.lax.scan(__scan_timestep, (_initial_state),_expanded_data_trial)
+        _,(_predicted_actions,_perceived_actions,_trial_states,_trial_other_data) = jax.lax.scan(__scan_timestep, (_initial_state),_expanded_data_trial)
         _removed_last_predicted_action = tree_map(lambda x : x[:-1,...],_predicted_actions)
+        _removed_last_perceived_actions = tree_map(lambda x : x[:-1,...],_perceived_actions)
+                
+        _new_params,_other_reporting_data = agent_learn((_rewards_trial,_observations_trial,_trial_states,_removed_last_perceived_actions),_agent_params)
         
-        _new_params = agent_learn((_rewards_trial,_observations_trial,_trial_states,_actions_trial),_agent_params)
+        _reporting_dict = {**_trial_other_data,**_other_reporting_data}
         
-        return _new_params,(_removed_last_predicted_action,(_trial_states,_trial_other_data))
+        return _new_params,(_removed_last_predicted_action,(_trial_states,_new_params,_reporting_dict))
 
-    final_parameters,(predicted_actions,(model_states,other_data)) = jax.lax.scan(_scan_trial,initial_parameters,data)
+    final_parameters,(predicted_actions,(model_states,model_params,other_data)) = jax.lax.scan(_scan_trial,initial_parameters,data)
 
-    return final_parameters,predicted_actions,(model_states,other_data)
+    return final_parameters,predicted_actions,(model_states,model_params,other_data)
 
 
-def compute_loglikelihood(data,agent_functions,statistic='mean',return_params=False):   
-    final_parameters,predicted_actions,(model_states,other_data) = compute_predicted_actions(data,agent_functions)
+def compute_predicted_actions_basic(data,agent_functions):
+    """A function that uses vmap to compute the predicted agent action at time $t$ given $o_{1:t}$ and $u_{1:t-1}$. 
+    This function should be differentiable w.r.t. the hyperparameters of the agent's model because we're going to perform
+    gradient descent on it !
+
+    Args:
+        environment (_type_): _description_
+        agent_functions (_type_): _description_
+        seed (_type_): _description_
+        Ntrials (_type_): _description_
+
+    Returns:
+        _type_: _description_
+        
+        
+    Note : A lower memory usage than compute_predicted_actions, making it more adapted to batch gradient descent.
+    """
+    init_params,init_state,_,agent_learn,predict,_ = agent_functions
+    
+    
+    # Data should contain :
+    # - all observations -> stimuli,reward (from the system)
+    #       -> a list of stimuli for each modality
+    #       -> a list of observation filters for each modality
+    #       -> a Ntrials x Ntimesteps tensor array of scalar rewards (\in [0,1])
+    # - all true actions 
+    #       -> a Ntrials x (Ntimesteps-1) x Nu tensor array encoding the observed actions
+    #       -> a Ntrials x (Ntimesteps-1) filter tensor indicating which actions were NOT observed
+    
+    initial_parameters = init_params()  
+        # The initial parameters of the tested model are initialized once per training
+    
+    
+    def _scan_trial(_carry,_data_trial):
+        
+        _agent_params = _carry
+        _initial_state = init_state(_agent_params)
+        
+        _observations_trial,_observations_filter_trial,_rewards_trial,_actions_trial,_timestamps_trial = _data_trial
+        
+        # The same actions, with an extra one at the end for scan to work better !
+        _expanded_actions_trial = tree_map(lambda x : jnp.concatenate([x,jnp.zeros((1,x.shape[-1]))]),_actions_trial)
+        _expanded_data_trial = (_observations_trial,_observations_filter_trial,_rewards_trial,_expanded_actions_trial,_timestamps_trial)
+        
+        def __scan_timestep(__carry,__data_timestep):
+            __agent_state = __carry
+            
+            __new_state,__predicted_action,__other_data = predict(__data_timestep,__agent_state,_agent_params)        
+            
+            (_,_,_,__perceived_action_timestep,_) = __data_timestep
+            
+            return __new_state,(__predicted_action,__perceived_action_timestep,__new_state,__other_data)
+        
+        _,(_predicted_actions,_perceived_actions,_trial_states,_) = jax.lax.scan(__scan_timestep, (_initial_state),_expanded_data_trial)
+        _removed_last_predicted_action = tree_map(lambda x : x[:-1,...],_predicted_actions)
+        _removed_last_perceived_actions = tree_map(lambda x : x[:-1,...],_perceived_actions)
+                
+        _new_params,_ = agent_learn((_rewards_trial,_observations_trial,_trial_states,_removed_last_perceived_actions),_agent_params)
+                
+        return _new_params,_removed_last_predicted_action
+
+    final_parameters,predicted_actions = jax.lax.scan(_scan_trial,initial_parameters,data)
+
+    return final_parameters,predicted_actions
+
+
+
+
+def compute_loglikelihood(data,agent_functions,statistic='mean',full_report=False):   
+    
+    final_parameters,predicted_actions = compute_predicted_actions(data,agent_functions)
     
     # This function will be mapped to all action modalities :
     def _cross_entropy_action_modality(_true_action,_predicted_action):
@@ -121,8 +198,8 @@ def compute_loglikelihood(data,agent_functions,statistic='mean',return_params=Fa
     ce_dict = tree_map(_cross_entropy_action_modality,actions,predicted_actions)
     logliks_dict = tree_map(_loglik_action_modality,ce_dict)
     
-    if return_params:
-        return (logliks_dict,ce_dict),(predicted_actions,final_parameters),(model_states,other_data)
+    if full_report:
+        return (logliks_dict,ce_dict),(predicted_actions,final_parameters)
     
     return logliks_dict,ce_dict
 

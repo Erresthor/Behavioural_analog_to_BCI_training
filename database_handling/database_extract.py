@@ -432,13 +432,34 @@ def extract_subject_data(data,auto_translate= True):
     
     return dictionnary_instance,events,trials_data,fb_rtv
 
-def get_full_subject_entry(recordings_collection,subject_id,task_id=None,
+def get_full_subject_entry(recordings_list,subject_id,task_id=None,
                            process_feedback_data_stream=False):    
     
+    # if task_id is None:
+    #     matching_subjects = list(recordings_collection.find({"subjectId":subject_id}))
+    # else :
+    #     matching_subjects = list(recordings_collection.find({"$and": [{"subjectId":subject_id}, {"taskCode":{"$regex": task_id}}]}))
+    
+    # Replace that : 
     if task_id is None:
-        matching_subjects = list(recordings_collection.find({"subjectId":subject_id}))
+        matching_subjects = []
+        for subj in recordings_list :
+            if subj["subjectId"]==subject_id:
+                matching_subjects.append(subj)
+        
+        # matching_subjects = list(recordings_collection.find({"subjectId":subject_id}))
     else :
-        matching_subjects = list(recordings_collection.find({"$and": [{"subjectId":subject_id}, {"taskCode":{"$regex": task_id}}]}))
+        matching_subjects = []
+        for subj in recordings_list :
+            if (subj["subjectId"]==subject_id)and(task_id in subj["taskCode"]):
+                matching_subjects.append(subj)
+                
+        # matching_subjects = list(recordings_collection.find({"$and": [{"subjectId":subject_id}, {"taskCode":{"$regex": task_id}}]}))
+    
+    
+    
+    
+    
     
     if len(matching_subjects)>1:
         for subj in matching_subjects:
@@ -520,14 +541,15 @@ def get_all_subject_data_from_internal_task_id(internal_task_id,prolific_task_id
     
     
     # 1. Get the completed recordings from Atlas MongoDB :
+    
     # (this operation may take a while for bad  connections or if we have a big amount of subjs)
-    collection_complete = get_complete_collection()
+    all_subj_list = get_complete_collection()
         # All the data from the subjects we're interested in !
 
     # Ugly querying incoming : 
     # Go through the whole database (should not be THAT long, this is a pretty small DB)
     subject_ids_concerned = []
-    for entry in collection_complete.find():
+    for entry in all_subj_list:
         # Find all the subjects with matching internal task id code ! 
         [recorded_task, recorded_prolific_task_id] = (entry["taskCode"].split("+"))
        
@@ -537,7 +559,7 @@ def get_all_subject_data_from_internal_task_id(internal_task_id,prolific_task_id
     
     return_data = []
     for subjid in subject_ids_concerned:
-        return_data.append(get_full_subject_entry(collection_complete,subjid,internal_task_id,
+        return_data.append(get_full_subject_entry(all_subj_list,subjid,internal_task_id,
                                                   process_feedback_data_stream))
     
     
