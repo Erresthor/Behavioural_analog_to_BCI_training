@@ -91,6 +91,17 @@ if __name__ == "__main__":
     # print("("+str(len(c))+" subjects)")
     
         
-    full_coll_from_local = get_all_subject_data_from_internal_task_id("002")
+    # full_coll_from_local = get_all_subject_data_from_internal_task_id("002")
     
-    print(len(full_coll_from_local))
+    # print(len(full_coll_from_local))
+    
+    
+    from database_handling.database_extract import get_complete_collection
+        
+    complete_collection = get_complete_collection()
+    
+    count_how_many = 0
+    for subj in complete_collection:
+        if  (subj["taskCode"].split("+")[0] == "001") or (subj["taskCode"].split("+")[0] == "BEFORE_PROLIFIC"):
+            count_how_many += 1
+    print(count_how_many)

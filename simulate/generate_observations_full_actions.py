@@ -109,7 +109,7 @@ def simulate_training(environment_functions,agent_functions,rngkey_simulation,
             __choice_rng_key, __rngkey_timestep = jr.split(__rngkey_timestep)
             __obs_agent = (__env_obs,__env_reward,__t)
             
-            __new_agent_state,(_,_,__u_vec) = func_agent_step(__obs_agent,__agent_state,_agent_params,__choice_rng_key)
+            __new_agent_state,(_,_,__u_vec),__reporting_data = func_agent_step(__obs_agent,__agent_state,_agent_params,__choice_rng_key)
             
             __new_agent_perceived_actions = __u_vec
             
@@ -118,7 +118,7 @@ def simulate_training(environment_functions,agent_functions,rngkey_simulation,
             __new_env_obs,__new_env_reward,__new_env_state = func_env_step(__env_state,__u_vec,
                                                 __t,__env_obs,__env_rng_key)
                         
-            return (__new_env_state,__new_env_obs,__new_env_reward,__new_agent_state),(__new_env_state,__new_env_obs,__new_env_reward,__new_agent_state,__u_vec,__new_agent_perceived_actions)
+            return (__new_env_state,__new_env_obs,__new_env_reward,__new_agent_state),(__new_env_state,__new_env_obs,__new_env_reward,__new_agent_state,__u_vec,__new_agent_perceived_actions,__reporting_data)
         
         _initial_state_rngkey,_rngkey_trial = jr.split(_rngkey_trial)
         _initial_obs,_inital_reward,_initial_state_env = func_env_initial_state(_initial_state_rngkey)
@@ -127,7 +127,7 @@ def simulate_training(environment_functions,agent_functions,rngkey_simulation,
         _initial_carry = (_initial_state_env,_initial_obs,_inital_reward,_initial_state_agent)
         _data = (jnp.arange(n_observations_per_trial),jr.split(_rngkey_trial,n_observations_per_trial))
         
-        _,(_env_states,_env_obs,_env_rewards,_agent_states,_agent_actions,_agent_perceived_actions) = jax.lax.scan(__scan_timestep,_initial_carry,_data)
+        _,(_env_states,_env_obs,_env_rewards,_agent_states,_agent_actions,_agent_perceived_actions,_reporting_data) = jax.lax.scan(__scan_timestep,_initial_carry,_data)
         
         # We generated one more environment timestep than needed ! Let's remove the supplementary one
         # And include the initial carry value in the results
@@ -145,7 +145,7 @@ def simulate_training(environment_functions,agent_functions,rngkey_simulation,
         
         _new_params,_other_reporting_data = func_agent_learn((_env_rewards,_env_obs,_agent_states,_agent_perceived_actions),_agent_params)
                 
-        return _new_params,((_env_states,_env_obs,_env_rewards),(_agent_states,_new_params,_agent_actions))
+        return _new_params,((_env_states,_env_obs,_env_rewards),(_agent_states,_new_params,_agent_actions,_reporting_data))
 
 
     # The initial parameters of the tested model are initialized once per training

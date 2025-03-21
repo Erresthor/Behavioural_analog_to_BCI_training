@@ -176,7 +176,7 @@ def compute_predicted_actions_basic(data,agent_functions):
 
 def compute_loglikelihood(data,agent_functions,statistic='mean',full_report=False):   
     
-    final_parameters,predicted_actions = compute_predicted_actions(data,agent_functions)
+    final_parameters,predicted_actions = compute_predicted_actions_basic(data,agent_functions)
     
     # This function will be mapped to all action modalities :
     def _cross_entropy_action_modality(_true_action,_predicted_action):

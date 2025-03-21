@@ -43,12 +43,15 @@ def get_default_parameters(model_options):
     
     def _populate_dictionnary_of_parameters_for_action_modality(_dict):
         # Fill with each action modality param :
-        _dict["transition_stickiness"] = 0.0
+        _dict["initial_transition_stickiness"] = 0.0
         _dict["transition_learning_rate"] = 0.0
         _dict["transition_forgetting_rate"] = 0.0
         _dict["perception_sigma"] = 0.0
         _dict["reward_seeking"] = 0.0
         _dict["beta_pi"] = 0.0
+        
+        if (model_options["set_initial_transition_confidence"]):
+            _dict["initial_transition_confidence"] = 0.0
         
         if (model_options["generalizer"]["transitions_generalize"]):
             _dict["gamma_generalize"] = 1e3        
@@ -95,12 +98,17 @@ def get_default_hparams_ranges(model_options):
     
     def _populate_dictionnary_of_parameters_for_action_modality(_dict):
         # Fill with each action modality param :
-        _dict["transition_stickiness"] = jnp.array([-3,3])
+        _dict["initial_transition_stickiness"] = jnp.array([-3,3])
+        
         _dict["transition_learning_rate"] = jnp.array([-3,3])
         _dict["transition_forgetting_rate"] = jnp.array([-10,10])
         _dict["perception_sigma"] = jnp.array([-3,3])
         _dict["reward_seeking"] = jnp.array([-3,3])
         _dict["beta_pi"] = jnp.array([-3,3])
+        
+        if (model_options["set_initial_transition_confidence"]):
+            _dict["initial_transition_confidence"] = jnp.array([-3,3])
+            
         
         if (model_options["generalizer"]["transitions_generalize"]):
             _dict["gamma_generalize"] = jnp.array([-3,3])       
@@ -129,7 +137,7 @@ def get_default_hparams_ranges(model_options):
 
 def get_default_parameter_priors(model_options,
                                  beta_omega_prior,beta_fl_prior,
-                                 beta_pi_prior,B_stickiness_prior,
+                                 beta_pi_prior,B_stickiness_prior,B_confidence_prior,
                                  reward_seeking_prior):    
     priors = {}
     
@@ -151,12 +159,16 @@ def get_default_parameter_priors(model_options,
     
     def _populate_dictionnary_of_parameters_for_action_modality(_dict):
         # Fill with each action modality param :
-        _dict["transition_stickiness"] = B_stickiness_prior
+        _dict["initial_transition_stickiness"] = B_stickiness_prior
+        
         _dict["transition_learning_rate"] = FLAT_PRIOR
         _dict["transition_forgetting_rate"] = FLAT01_PRIOR
         _dict["perception_sigma"] = FLAT_PRIOR
         _dict["reward_seeking"] = reward_seeking_prior
         _dict["beta_pi"] = beta_pi_prior
+        
+        if (model_options["set_initial_transition_confidence"]):
+            _dict["initial_transition_confidence"] = B_confidence_prior
         
         if (model_options["generalizer"]["transitions_generalize"]):
             _dict["gamma_generalize"] = FLAT_PRIOR      

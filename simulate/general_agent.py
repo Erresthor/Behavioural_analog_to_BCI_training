@@ -112,10 +112,13 @@ class Agent :
         model_name += "_" + self.model_options["model_family"]
         
         if self.model_options["model_family"] == "aif":
+            model_name += self.model_options["efe_compute_method"]
             if self.model_options["learn_during_trials"]:
                 model_name +="L"
             if self.model_options["learn_habits"]:
                 model_name += "le"
+            if self.model_options["set_initial_transition_confidence"]:
+                model_name += "bc"
             
         else :
             if self.model_options["assymetric_learning_rate"]:
@@ -178,6 +181,10 @@ class Agent :
                 tags.append("habits_learning")
             if self.model_options["learn_during_trials"]:
                 tags.append("learn_during_trials")
+            if self.model_options["set_initial_transition_confidence"]:
+                tags.append("initial_conf")
+            tags.append(self.model_options["efe_compute_method"])
+            
         else :
             if self.model_options["assymetric_learning_rate"]:
                 tags.append("assymetric")
@@ -246,12 +253,46 @@ class Agent :
             else:
                 return qvalue_get_default_hparams_ranges(self.model_options)
         return self.initial_ranges
+    
+    def get_number_of_free_parameters(self):
+        example_params = self.get_random_parameters(jr.PRNGKey(0))
+
+        vls,_ = (jax.tree.flatten(tree_map(lambda x : x.shape[0],example_params)))    
+            
+        nbr,_ = (jax.tree.flatten(tree_map(lambda x : 1,example_params)))    
         
+        return sum(vls) + self.get_delta_n_parameters(),sum(nbr)
+    
+    
+    
+    
+    def get_delta_n_parameters(self):
+        """ 
+        Depending on the model family, remove free parameter counts if the values are part of a normalized vector (the last value can be computed from the others)
+        """
+        
+        delta = 0
+        if self.model_options["model_family"] == "random":
+            return 0
+
+        # Normalized vector outputs count for 1 less free parameter !
+        if self.get_methods_from_package !="aif": 
+            if "static" in self.model_options["biaises"] :
+                delta -= 3  # T
+            if "initial" in self.model_options["biaises"] :
+                delta -= 3
+        
+        if not(self.model_options["modality_selector"] is None):
+            if "initial" in self.model_options["modality_selector"]["biaises"]:
+                delta -= 1
+        return delta
+    
     def get_priors(self,
                    beta_omega_dist=FLAT_PRIOR,
                    beta_fl_dist=FLAT_PRIOR,
                    beta_pi_dist = FLAT_PRIOR,
                    beta_q_dist=FLAT_PRIOR,
+                   B_confidence_prior = FLAT_PRIOR,
                    B_stickiness_dist = FLAT_PRIOR,
                    reward_seeking_dist = MEDIUM_GAUSSIAN_PRIOR,
                    beta_biais_dist=FLAT_PRIOR):
@@ -264,6 +305,7 @@ class Agent :
                                 beta_fl_dist,
                                 beta_pi_dist,
                                 beta_q_dist,
+                                B_confidence_prior,
                                 B_stickiness_dist,
                                 reward_seeking_dist)
                      
@@ -301,7 +343,18 @@ class Agent :
 
 
                 # Planning options :
-                planning_options[action_dimension] = get_planning_options(self.model_options["_Th"][action_dimension],"classic",a_novel=False,b_novel=True)
+                planning_options[action_dimension] = get_planning_options(self.model_options["_Th"][action_dimension],
+                                                                          self.model_options["efe_compute_method"],
+                                                                          explore_remaining_paths=True,
+                                                                          state_horizon=2,action_horizon=9,
+                                                                          a_novel=False,b_novel=True,
+                                                                          old_efe_computation=False)
+                # get_planning_options(Th,planning_method = "sophisticated",
+                #         state_horizon = model_parameters["N_state_branches"],
+                #         action_horizon=model_parameters["N_action_branches"],
+                #         explore_remaining_paths=model_parameters["explore_remaining"],
+                #         a_novel=False,b_novel=False,
+                #         old_efe_computation=True)
                 
                 
                 # Learning options :

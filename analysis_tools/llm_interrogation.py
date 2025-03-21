@@ -102,3 +102,89 @@ def ask_llm(llm_client,filepath,question,all_tasks_results,
         #     pickle.dump(all_llms_results, file)
         print("Updated dictionary at {}.".format(file_path))
     return all_llms_results
+
+def ask_llm_cluster(model_name,filepath,question,all_tasks_results,
+            message_template_dict,
+            override_existing = False):
+    import ollama
+    file_path = pathlib.Path(filepath)
+    
+    (question_code,question_contents) = question
+    
+    # Creat save folder if it does not exist
+    file_path.parent.mkdir(parents=True, exist_ok=True) 
+    
+    
+    
+    # Check for an existing dictionnary of answers or create it :
+    if file_path.exists():
+        with open(filepath, 'rb') as f:
+            all_llms_results = pickle.load(f)
+    else:
+        all_llms_results = {}
+    
+    
+    
+    # Check if the question already exists in the dict : 
+    if question_code in all_llms_results.keys():
+        # Make sure this question is the exact same as the previous :
+        if not override_existing :
+            
+            dict_are_same, dict_arent_same_explanation = compare_dicts(all_llms_results[question_code]["prompt"],question_contents)
+            
+            if not(dict_are_same):
+                raise Exception("The question code {} already exists but has different contents : \n {}".format(question_code,dict_arent_same_explanation))
+            else  : 
+                return all_llms_results
+    else : 
+        all_llms_results[question_code] = {}
+    
+    message_template = message_template_dict[question_contents["answers"]]
+
+    all_llms_results[question_code]["Template"] = message_template(question_contents,"[SUBJECT ANSWER]")
+    all_llms_results[question_code]["prompt"] = question_contents 
+    all_llms_results[question_code]["results"] = {} 
+    
+    
+    
+    # For all tasks in the input data :
+    for task_id,task_results in all_tasks_results.items():
+        # Check if the question already exists in the dict : 
+        if task_id in all_llms_results[question_code]["results"].keys():
+            if not override_existing :
+                print("Skipping {} for task {} (already exists).".format(question_code,task_id))
+                continue # No need to ask the LLM, classification already exists !
+            
+        all_llms_results[question_code]["results"][task_id] = []
+        
+        n_subjects = len(task_results)
+        for k,subject_results in enumerate(task_results):
+            print("{}/{}".format(k+1,n_subjects))
+            
+            subject_dict,trial_data,events,fb_rtv = subject_results
+            
+            
+            subject_answer = subject_dict[question_contents["dict_key"]]
+
+            message = message_template(question_contents,subject_answer)
+            
+            response = ollama.chat(
+                model=model_name,
+                messages=message, 
+                options = {"temperature": 0.1} # Low temperature for deterministic answers
+            )
+
+            detected_category = response['message']['content']
+            
+            all_llms_results[question_code]["results"][task_id].append(detected_category)
+
+        
+        with open(file_path, 'wb') as f:
+            pickle.dump(all_llms_results, f)
+
+        print("Updated dictionary at {}.".format(file_path))
+    return all_llms_results    
+    
+    
+    
+    

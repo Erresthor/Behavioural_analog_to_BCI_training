@@ -119,8 +119,10 @@ def get_results_df(_internal_task_id,_studies_list = None,_exclude_subjects_list
     all_subject_scores = [subjdata[2]["scoring"] for subjdata in _tasks_results_all]
     subjects_df["raw_feedback_values"] = [subj_scores["feedback"] for subj_scores in all_subject_scores]
     # Real time gauge values :
+    subjects_df["raw_realtime_values"] = [subjdata[3][0] for subjdata in _tasks_results_all]
     subjects_df["realtime_values"] = [subjdata[3][1] for subjdata in _tasks_results_all] # Each element is a list of list os arrays (with varying shape)
-
+    
+    
     # 3/ Data from the hidden grid :
     # The grid for a specific trial: 
     trial_grids = [entry[2]["process"]["grids"] for entry in _tasks_results_all]
@@ -184,8 +186,10 @@ def get_results_df(_internal_task_id,_studies_list = None,_exclude_subjects_list
 
     # Encoded delays between stimuli, point1 and point2 :
     all_action_delays = all_actions_data[...,-1,2]
+    
     unfit_actions = (all_action_delays<10)
     subjects_df["action_time_between_points"] = np.where(all_action_delays>10, all_action_delays, np.nan).tolist()
+    subjects_df["action_delays"] = list(all_actions_data)
 
     # Performance metric : we use the average distance to goal state across the lask k_T trials and the last k_t timesteps : (ignoring the blind trial)
     all_distances_to_goal_final = np.mean(np.stack(subjects_df["norm_distance_to_goal"])[:,-last_k_trials:-1,-last_t_timesteps:],axis=(-1,-2))
@@ -222,7 +226,7 @@ def get_results_df(_internal_task_id,_studies_list = None,_exclude_subjects_list
 
 def get_full_dataframe_from_raw_data(studies_extraction_dictionnary,llm_classif_path,
                                      last_t_timesteps=5,last_K_trials=2,
-                                     show_clustering = True):
+                                     show_clustering = True,limit_gmm_plot=None,return_qsts = False,max_y=False):
     full_dataframe = pd.DataFrame()
     for study_name,study_codes in studies_extraction_dictionnary.items() :
 
@@ -240,7 +244,7 @@ def get_full_dataframe_from_raw_data(studies_extraction_dictionnary,llm_classif_
 
 
     # For the performance, it's a bit more tricky : 
-    # We can use the linear approximation or try to clusterize our results !
+    # We can cluster the performance categorization by study
     override_linear = True
 
 
@@ -290,7 +294,7 @@ def get_full_dataframe_from_raw_data(studies_extraction_dictionnary,llm_classif_
 
 
         # Visualize the fitted mixture of gaussians :
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(6, 6))
         x = np.linspace(0, 1, 1000).reshape(-1, 1)
         density = np.exp(gm.score_samples(x))  # Convert log-likelihood to density
         def gaussian_pdf(x, mean, var):
@@ -301,13 +305,17 @@ def get_full_dataframe_from_raw_data(studies_extraction_dictionnary,llm_classif_
         ]
         for i, (ind_density,cat_label) in enumerate(zip(individual_densities,["Poor performance","Middling performance","Good performance"])):
             plt.plot(x, ind_density, linestyle='--', linewidth=2, label=cat_label)
+            
+        if max_y:
+            plt.ylim([0,10])
         # Histogram of the data
         plt.hist(fit_this, bins=30, density=True, alpha=0.6, color='gray', label='Histogram')
         # GMM density
         plt.plot(x, density, color='red', linewidth=2, label='GMM Density')
-        plt.title('Visualization of GMM with Individual Gaussians')
-        plt.xlabel('Final performance ($= 1 - DtG$) across the last {} timesteps'.format(last_t_timesteps))
+        plt.title('GMM clustering of final subject performances')
+        plt.xlabel('$Pf$ \n(Avg. performance across the last {} trials & {} blocks)'.format(last_t_timesteps,last_K_trials))
         plt.ylabel('Density')
+        plt.ylim(top = limit_gmm_plot)
         plt.legend()
         plt.grid(True)
         plt.show()
@@ -316,15 +324,15 @@ def get_full_dataframe_from_raw_data(studies_extraction_dictionnary,llm_classif_
         posteriors = gmm_fixed.predict_proba(np.expand_dims(all_vals,-1))
         fig,ax = plt.subplots(1,1,figsize = ((6,6)))
         fig.suptitle("Clustering the subjects in 3 performance categories")
-        ax.plot(all_vals,posteriors[:,2],color="green",label="good performers")
-        ax.plot(all_vals,posteriors[:,1],color="orange",label="middling performers")
-        ax.plot(all_vals,posteriors[:,0],color="blue",label="poor performers")
+        ax.plot(all_vals,posteriors[:,2],color="green",label="good performance rating")
+        ax.plot(all_vals,posteriors[:,1],color="orange",label="middling performance rating")
+        ax.plot(all_vals,posteriors[:,0],color="blue",label="poor performance rating")
         sns.scatterplot(data=full_dataframe,x="final_performance",y="good_performance_rating",color="green")
         sns.scatterplot(data=full_dataframe,x="final_performance",y="middling_performance_rating",color="orange")
         sns.scatterplot(data=full_dataframe,x="final_performance",y="poor_performance_rating",color="blue")
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.legend(bbox_to_anchor=(0.65, 0.5), loc='upper left')
         plt.ylabel("Performance category posterior")
-        plt.xlabel("Avg. performance across the last {} timesteps & {} trials".format(last_t_timesteps,last_K_trials))
+        plt.xlabel("$Pf$ \n(Avg. performance across the last {} trials & {} blocks)".format(last_t_timesteps,last_K_trials))
         plt.show()
         
         
@@ -332,13 +340,18 @@ def get_full_dataframe_from_raw_data(studies_extraction_dictionnary,llm_classif_
     
         # Effectives :   
         # Count the number of entries for each category
+        fig,ax = plt.subplots(1,1,figsize = ((6,6)))
+        fig.suptitle("Subject counts in each performance category")
         category_counts = full_dataframe['performance_category'].value_counts().reset_index()
         category_counts.columns = ['performance_category', 'Count']# Create a barplot using seaborn
         sns.barplot(data=category_counts, x='performance_category', y='Count',hue ='performance_category',
                     order=["Poor","Middling","Good"],hue_order=["Poor","Middling","Good"],errorbar='sd')
         plt.ylabel("Subject Counts")
         plt.xlabel("Final performance category".format(last_t_timesteps,last_K_trials))
-        plt.show()
-    
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.grid()
+        plt.show()   
 
+    if return_qsts :
+        return full_dataframe,qsts
     return full_dataframe

@@ -110,10 +110,6 @@ def compute_action_posteriors(observation,state,params,
         pe = state["E"][mod]
         u = params["U"][mod]
         
-        
-        lr_b = step_parameters[mod]["transition_learning_rate"]
-        fr_b = step_parameters[mod]["transition_forgetting_rate"]
-        
         step_a,step_b,step_d = vectorize_weights(pa,pb,pd,u)
         step_c,step_e = to_log_space(pc,pe)
         step_a_nov,step_b_nov = get_vectorized_novelty(pa,pb,u,compute_a_novelty=False,compute_b_novelty=True)
@@ -142,6 +138,9 @@ def compute_action_posteriors(observation,state,params,
         # OPTIONAL : ONLINE UPDATING OF PARAMETERS 
         if model_options["learn_during_trials"] :  
             
+            lr_b = step_parameters[mod]["transition_learning_rate"]
+            fr_b = step_parameters[mod]["transition_forgetting_rate"]
+            
             
             learn_what={"a":False,"b":True,"e":False}
             learn_rates={"a":0.0,"b":lr_b,"e":0.0}
@@ -161,6 +160,7 @@ def compute_action_posteriors(observation,state,params,
             state["B"][mod] = new_pb
             state["E"][mod] = new_pe
         
+        
         state["previous_posterior"][mod] = posterior_mod
         
         
@@ -168,7 +168,10 @@ def compute_action_posteriors(observation,state,params,
             # We need a way to compute an estimator of how much this modality
             # seems to control the gauge ! 
             if model_options["modality_selector"]["metric"] == "js_controll":
-                d_omega[mod] = compute_js_controllability(new_pb) 
+                
+                _,new_step_b,_ = vectorize_weights(pa,pb,pd,u)
+                
+                d_omega[mod] = compute_js_controllability(new_step_b) 
                 
             elif model_options["modality_selector"]["metric"] == "efe":
                 action_distribution = jax.nn.softmax(mod_parameters["beta_pi"]*efe_mod)
@@ -187,6 +190,7 @@ def compute_action_posteriors(observation,state,params,
 
     # If we use a modality selector, action selection is not independent across dimensions
     # but governed by an "omega" parameter. 
+    reporting_data["efe"] = efes
     
     # Updating our appreciation of omega !
     if not(model_options["modality_selector"] is None):
@@ -241,7 +245,7 @@ def actor_step(observation,state,params,rngkey,
     # Udpate the last action with the sampled value :
     new_state["previous_action"] = vect_action_selected
     
-    return new_state, (action_posteriors,action_selected,vect_action_selected)
+    return new_state, (action_posteriors,action_selected,vect_action_selected), other_data
 
 
 def predict(observation,state,params,

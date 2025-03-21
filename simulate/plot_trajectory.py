@@ -21,7 +21,7 @@ def plot_grid(ax,grid_shape,goal_state,color=np.array([0.0,0.0,0.0,0.5])):
     COLOR = "green"#np.array([0.3,0.8,0.3,1.0])
     x_goal,y_goal = goal_state
     # The pole    
-    ax.plot([x_goal-0.1,x_goal-0.1],[y_goal-0.4,  y_goal+0.3],color=COLOR,marker="o", linestyle='-')
+    ax.plot([x_goal-0.1,x_goal-0.1],[y_goal-0.4,  y_goal+0.3],color=COLOR, linestyle='-')
     # The flag
     ax.plot([x_goal-0.1,x_goal + 0.4],[y_goal-0.1,y_goal+(0.3-0.1)/2.0],color=COLOR,lw = 2)       
     ax.plot([x_goal-0.1,x_goal + 0.4],[y_goal+0.3,y_goal+(0.3-0.1)/2.0],color=COLOR,lw = 2)  
@@ -63,6 +63,11 @@ def plot_training(ax,state_history,
     
     COLOR_START = np.array([0,0,1])
     COLOR_END = np.array([1,0,0])
+    
+    
+    COLOR_START = np.array([0.2,0.9,0.1])
+    COLOR_END = np.array([0.8,0.2,0.8])
+    
     Ntrials = state_history.shape[0]
     
     ts = np.linspace(0,1,Ntrials)
@@ -137,21 +142,22 @@ def plot_actions(ax,_agent_actions,label,
                         [np.sin(theta),  np.cos(theta)]]).squeeze()
         
 
-
-    def action_to_points(action_dict):
+    def sample_mod_values(action_dict):
         angle_mu,angle_sample = action_index_to_value("angle",action_dict["angle"],Nsamples=1)
         if angle_mu is None:
             angle_sample = np.random.random()*np.pi*2
         
         position_mu,position_sample = action_index_to_value("position",action_dict["position"],Nsamples=1)    
         distance_mu,distance_sample = action_index_to_value("distance",action_dict["distance"],Nsamples=1)
-        
-        x1 = position_sample + (distance_sample/2.0)*np.dot(rotation_matrix_2d(-angle_sample+np.pi),np.array([1,0]))
-        x2 = position_sample + (distance_sample/2.0)*np.dot(rotation_matrix_2d(-angle_sample),np.array([1,0]))
-        return np.stack([x1,x2]).squeeze(),position_mu
+        return (position_sample,angle_sample,max(0,distance_sample)),(angle_mu,position_mu,distance_mu)
+    
+    def action_to_points(pos,ang,dis):
+        x1 = pos + (dis/2.0)*np.dot(rotation_matrix_2d(-ang+np.pi),np.array([1,0]))
+        x2 = pos + (dis/2.0)*np.dot(rotation_matrix_2d(-ang),np.array([1,0]))
+        return np.stack([x1,x2]).squeeze()
 
-    # Draw the grid :
-
+    def arePointInScreen(Xs):
+        return np.all((0 <= Xs) & (Xs <= 1))
 
     def cosine_similarity(a, b):
         cos_simimarity =  (np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)+0.00001))
@@ -160,8 +166,9 @@ def plot_actions(ax,_agent_actions,label,
     def dict_vect_to_ind(_dict):
         return {key:np.argmax(val) for (key,val) in _dict.items()}
 
+    # Draw the grid :
     ax.set_title(label)
-    eps = 0.2
+    eps = 0.0
     ax.set_ylim([1+eps,0-eps])
     ax.set_xlim([0-eps,1+eps])
     ax.hlines(0,xmin=0,xmax=1,color="black",lw=2)
@@ -173,7 +180,13 @@ def plot_actions(ax,_agent_actions,label,
     for action in range(Ntimesteps) :
         plotted_dict = {key:val[action,:] for (key,val) in _agent_actions.items()}
         
-        Xs, pos_mu= action_to_points(dict_vect_to_ind(plotted_dict))
+        (position_sample,angle_sample,distance_sample),(angle_mu,position_mu,distance_mu) = sample_mod_values(dict_vect_to_ind(plotted_dict))
+        
+        Xs = action_to_points(position_sample,angle_sample,distance_sample)
+        while not(arePointInScreen(Xs)):
+            distance_sample = distance_sample - 1e-2
+            (position_sample,angle_sample,_),(_,_,_) = sample_mod_values(dict_vect_to_ind(plotted_dict))
+            Xs = action_to_points(position_sample,angle_sample,distance_sample)
         
         if plotstyle=='dots':
             if (np.linalg.norm(Xs[1] - Xs[0])<0.02): 
@@ -197,18 +210,43 @@ def plot_actions(ax,_agent_actions,label,
         # ax.scatter(pos_mu[0],pos_mu[1],color="green")
 
 
-
 def plot_learnt_transition_matrix(states,trial,timestep):
     fig,axs = plt.subplots(3,9)
+    fig.suptitle("Learnt transitions (trial {})".format(trial))
     for k,(modality) in enumerate(["position","angle","distance"]):
+        axs[k,0].set_ylabel(modality)
         bmod = states["B"][modality][trial,timestep]
         for u in range(9):
             if u < bmod.shape[-1]:
                 axs[k,u].imshow(bmod[...,u],vmin=0,vmax=1)
+                axs[k,u].set_xlabel("U{}".format(u))
+                axs[k,u].set_xticks([])
+                axs[k,u].set_yticks([])
+                # axs[k,u].axis('off')
             else :
                 axs[k,u].axis('off')
     fig.show()
 
+def plot_learnt_q_table(states,trial_list,timestep):
+    fig,axs = plt.subplots(3,len(trial_list),figsize=(9,3*len(trial_list)))
+    fig.suptitle("Learnt q table \n(trials {})".format(trial_list))
+    
+    minval = min([np.min(states["q_table"][modality]) for modality in ["position","angle","distance"]])
+    maxval = max([np.max(states["q_table"][modality]) for modality in ["position","angle","distance"]])
+    
+    for u,trial in enumerate(trial_list):
+        axs[0,u].set_title("Trial {}".format(trial))        
+        for k,(modality) in enumerate(["position","angle","distance"]):
+            axs[k,0].set_ylabel(modality)
+            qmod = states["q_table"][modality][trial,timestep]
+            axs[k,u].imshow(qmod,vmin=minval,vmax=maxval)
+            
+            axs[k,u].set_xticks([])
+            axs[k,u].set_yticks([])
+            
+            axs[k,0].set_yticks(range(qmod.shape[-2]))
+
+    fig.show()
 
 
 if __name__ == "__main__":

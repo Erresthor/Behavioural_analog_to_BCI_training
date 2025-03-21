@@ -281,9 +281,9 @@ def simple_1D_model(parameters):
     n_possible_actions = parameters["N_actions"]
     
     # An initially naive model !
-    transition_stickiness = parameters["transition_stickiness"]
-    transition_concentration = 1.0
-    b0 = transition_concentration*jnp.ones((Ns,Ns,n_possible_actions)) + transition_stickiness*jnp.expand_dims(jnp.eye(Ns),-1)
+    transition_stickiness = parameters["initial_transition_stickiness"]
+    transition_concentration = parameters["initial_transition_confidence"]
+    b0 = transition_concentration*(jnp.ones((Ns,Ns,n_possible_actions)) + transition_stickiness*jnp.expand_dims(jnp.eye(Ns),-1))
     b = [b0]
     
     # Assume a linear preference matrix c = ln p(o)

@@ -317,7 +317,7 @@ def actor_step(observation,state,params,rngkey,
     # Udpate the last action with the sampled value :
     new_state["previous_action"] = vect_action_selected
     
-    return new_state, (action_posteriors,action_selected,vect_action_selected)
+    return new_state, (action_posteriors,action_selected,vect_action_selected), other_data
 
 
 def predict(observation,state,params,

@@ -58,9 +58,12 @@ def initial_params(hyperparameters,
             "Ns_latent" : Ns[action_dimension],
             "N_actions" : Nu[action_dimension],
             "feedback_expected_std" : extract_params_from["perception_sigma"],
-            "transition_stickiness" : extract_params_from["transition_stickiness"],
+            "initial_transition_confidence" : 1.0,
+            "initial_transition_stickiness" : extract_params_from["initial_transition_stickiness"],
             "reward_seeking" : extract_params_from["reward_seeking"]
         }
+        if model_options["set_initial_transition_confidence"]:
+            initial_parameters["initial_transition_confidence"] = extract_params_from["initial_transition_confidence"]
     
         a0_m,b0_m,c0_m,d0_m,e0_m,u_m = simple_1D_model(initial_parameters)
         a0[action_dimension] = a0_m
@@ -108,7 +111,5 @@ def initial_state(param_dict,model_options):
     
     if not(model_options["modality_selector"] is None):        
         initial_state_dict["omega"] = param_dict["omega"]  
-    
-
     
     return initial_state_dict

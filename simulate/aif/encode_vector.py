@@ -56,12 +56,16 @@ def _encode_params(_X,model_options):
     
     def __encode_dictionnary_of_parameters_for_action_modality(__dict,__X):
         # Fill with each action modality param :
-        __dict["transition_stickiness"] = jnp.exp(__X["transition_stickiness"])
+        __dict["initial_transition_stickiness"] = jnp.exp(__X["initial_transition_stickiness"])
         __dict["transition_learning_rate"] = jnp.exp(__X["transition_learning_rate"])
         __dict["transition_forgetting_rate"] = jax.nn.sigmoid(__X["transition_forgetting_rate"])
         __dict["perception_sigma"] = jnp.exp(__X["perception_sigma"])
         __dict["reward_seeking"] = jnp.exp(__X["reward_seeking"])
         __dict["beta_pi"] = jnp.exp(__X["beta_pi"])
+        
+        
+        if (model_options["set_initial_transition_confidence"]):
+            __dict["initial_transition_confidence"] = jnp.exp(__X["initial_transition_confidence"])
         
         if (model_options["generalizer"]["transitions_generalize"]):
             __dict["gamma_generalize"] = jnp.exp(__X["gamma_generalize"])    
